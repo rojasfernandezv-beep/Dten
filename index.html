@@ -27,7 +27,8 @@
             query, 
             orderBy,
             serverTimestamp,
-            setLogLevel
+            setLogLevel,
+            getDoc // ADDED for robust single-device check
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // IMPORTANT: Log level set to debug for firestore
@@ -40,7 +41,6 @@
 
 
         // --- CONFIGURATION FOR EXTERNAL HOSTING ---
-        // The Firebase configuration keys have been provided and inserted below.
         const firebaseConfig = {
             apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
             authDomain: "device-checkout-system.firebaseapp.com",
@@ -51,7 +51,6 @@
             measurementId: "G-1R94ZGT22T", 
         };
         
-        // We use a static ID for the deployed app since the environment variable is gone.
         // THIS MUST MATCH THE PATH USED IN THE FIRESTORE SECURITY RULES (e.g., 'external-device-tracker')
         const appId = 'external-device-tracker'; 
 
@@ -232,8 +231,11 @@
                 
                 const returnDate = checkout.expectedReturnDate || 'N/A';
                 
-                // FIX: Use optional chaining (?.) to safely access the date and prevent crash
-                const checkoutTimeStr = checkout.checkoutDate?.toDate ? new Date(checkout.checkoutDate.toDate()).toLocaleString() : 'Awaiting Server Timestamp';
+                // FIX: Robust check for null/undefined and function existence to prevent 'toDate' error
+                const checkoutDate = checkout.checkoutDate;
+                const checkoutTimeStr = (checkoutDate && typeof checkoutDate.toDate === 'function') 
+                    ? new Date(checkoutDate.toDate()).toLocaleString() 
+                    : 'Awaiting Server Timestamp';
 
                 currentHolder.innerHTML = `
                     <p>Checked out by: <span class="font-semibold">${checkout.name}</span> (${checkout.email})</p>
@@ -279,9 +281,16 @@
             }
 
             historyData.forEach(item => {
-                // FIX: Use optional chaining (?.) for safe timestamp conversion
-                const checkoutTime = item.checkoutDate?.toDate ? item.checkoutDate.toDate().toLocaleString() : 'N/A';
-                const checkinTime = item.checkinDate?.toDate ? item.checkinDate.toDate().toLocaleString() : 'Pending';
+                // FIX: Robust check for null/undefined and function existence
+                const checkoutDate = item.checkoutDate;
+                const checkinDate = item.checkinDate;
+
+                const checkoutTime = (checkoutDate && typeof checkoutDate.toDate === 'function') 
+                    ? checkoutDate.toDate().toLocaleString() 
+                    : 'N/A';
+                const checkinTime = (checkinDate && typeof checkinDate.toDate === 'function') 
+                    ? checkinDate.toDate().toLocaleString() 
+                    : 'Pending';
                 
                 const listItem = document.createElement('div');
                 listItem.className = 'p-3 border-b border-gray-100 last:border-b-0 flex justify-between items-start';
@@ -332,6 +341,15 @@
             try {
                 document.getElementById('checkout-button').disabled = true;
 
+                // CRITICAL FIX: Read current status to enforce single device rule
+                const statusSnap = await getDoc(statusRef);
+                const currentStatus = statusSnap.data();
+                
+                if (currentStatus && !currentStatus.isAvailable) {
+                    showMessage("Error: The device is currently checked out. Please wait for it to be returned.", 'error');
+                    return; // Stop processing if not available
+                }
+                
                 // 1. Create a new history document first
                 const newHistoryRef = doc(historyRef);
                 const historyData = {
