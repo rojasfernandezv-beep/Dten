@@ -16,7 +16,7 @@
     <script type="module">
         // Firebase imports for HTML
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { 
             getFirestore, 
             doc, 
@@ -52,10 +52,10 @@
         };
         
         // We use a static ID for the deployed app since the environment variable is gone.
+        // THIS MUST MATCH THE PATH USED IN THE FIRESTORE SECURITY RULES (e.g., 'external-device-tracker')
         const appId = 'external-device-tracker'; 
-        const initialAuthToken = null; // Token is not available outside the environment.
 
-        // Firestore Paths are updated to reflect the static appId for data isolation
+        // Firestore Paths are constructed using the static appId
         const DEVICE_STATUS_PATH = `/artifacts/${appId}/public/data/device_status/status`;
         const CHECKOUT_COLLECTION_PATH = `/artifacts/${appId}/public/data/device_checkouts`;
         // --- END CONFIGURATION ---
@@ -106,15 +106,11 @@
          * Initializes Firebase and authenticates the user.
          */
         async function initFirebase() {
-            // NOTE: Removed the placeholder check for firebaseConfig to resolve 'auth/configuration-not-found' error.
-            // We now rely on the try/catch block to handle any configuration issues.
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Since the initialAuthToken is no longer available, we sign in anonymously for public access.
-                // The history and status paths are public, so anonymous sign-in is appropriate.
                 await signInAnonymously(auth);
 
                 // Wait for auth state to be ready
@@ -132,7 +128,6 @@
 
             } catch (error) {
                 console.error("Firebase initialization or sign-in failed:", error);
-                // Check if the error is due to a missing/invalid config and guide the user.
                 let errorMessage = `Firebase connection error: ${error.message}`;
                 if (error.code === 'auth/configuration-not-found' || error.code === 'app/invalid-credential') {
                      errorMessage = "Configuration Error: Please verify your API Key and other Firebase settings are correct.";
@@ -175,7 +170,9 @@
                 } else {
                     // This should only happen if the initialization failed or document was deleted
                     console.error("Device status document does not exist.");
-                    updateStatusUI({ isAvailable: false, currentCheckout: null });
+                    // Attempt to re-initialize if it's missing
+                    initializeDeviceStatus();
+                    updateStatusUI({ isAvailable: true, currentCheckout: null });
                 }
             }, (error) => {
                 console.error("Error listening to device status:", error);
@@ -234,10 +231,14 @@
                 statusText.innerHTML = '<span class="text-red-600 font-bold">CHECKED OUT</span>';
                 
                 const returnDate = checkout.expectedReturnDate || 'N/A';
+                
+                // FIX: Use optional chaining (?.) to safely access the date and prevent crash
+                const checkoutTimeStr = checkout.checkoutDate?.toDate ? new Date(checkout.checkoutDate.toDate()).toLocaleString() : 'Awaiting Server Timestamp';
+
                 currentHolder.innerHTML = `
                     <p>Checked out by: <span class="font-semibold">${checkout.name}</span> (${checkout.email})</p>
                     <p>Expected return: <span class="font-semibold">${returnDate}</span></p>
-                    <p class="text-xs text-gray-500 mt-2">Checked out on: ${new Date(checkout.checkoutDate.toDate()).toLocaleString()}</p>
+                    <p class="text-xs text-gray-500 mt-2">Checked out on: ${checkoutTimeStr}</p>
                 `;
                 currentCheckoutId = checkout.historyDocId; // Set the document ID for check-in
 
@@ -278,8 +279,9 @@
             }
 
             historyData.forEach(item => {
-                const checkoutTime = item.checkoutDate ? item.checkoutDate.toDate().toLocaleString() : 'N/A';
-                const checkinTime = item.checkinDate ? item.checkinDate.toDate().toLocaleString() : 'Pending';
+                // FIX: Use optional chaining (?.) for safe timestamp conversion
+                const checkoutTime = item.checkoutDate?.toDate ? item.checkoutDate.toDate().toLocaleString() : 'N/A';
+                const checkinTime = item.checkinDate?.toDate ? item.checkinDate.toDate().toLocaleString() : 'Pending';
                 
                 const listItem = document.createElement('div');
                 listItem.className = 'p-3 border-b border-gray-100 last:border-b-0 flex justify-between items-start';
@@ -328,8 +330,6 @@
             const historyRef = collection(db, CHECKOUT_COLLECTION_PATH);
 
             try {
-                // The onSnapshot listener handles the initial availability check, 
-                // but we perform a single transaction-like check here to be sure.
                 document.getElementById('checkout-button').disabled = true;
 
                 // 1. Create a new history document first
@@ -361,12 +361,17 @@
                     lastUpdated: serverTimestamp()
                 });
 
-                showMessage("Device successfully checked out!", 'success');
+                showMessage("Device successfully checked out! Refresh your browser to confirm persistence.", 'success');
                 clearForm();
 
             } catch (error) {
                 console.error("Check-out failed:", error);
-                showMessage(`Check-out failed: ${error.message}. Please try again.`, 'error');
+                // Check if the failure is due to permission denied
+                if (error.code === 'permission-denied') {
+                    showMessage("Error: Permission Denied. Please ensure your Firestore Security Rules are published correctly.", 'error');
+                } else {
+                    showMessage(`Check-out failed: ${error.message}. Please try again.`, 'error');
+                }
             } finally {
                  document.getElementById('checkout-button').disabled = false;
             }
@@ -404,9 +409,11 @@
 
             } catch (error) {
                 console.error("Check-in failed:", error);
-                showMessage(`Check-in failed: ${error.message}. Please try again.`, 'error');
-            } finally {
-                // The onSnapshot listener will re-enable/disable the button as needed
+                if (error.code === 'permission-denied') {
+                    showMessage("Error: Permission Denied. Please ensure your Firestore Security Rules are published correctly.", 'error');
+                } else {
+                    showMessage(`Check-in failed: ${error.message}. Please try again.`, 'error');
+                }
             }
         }
 
