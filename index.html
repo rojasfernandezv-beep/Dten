@@ -28,7 +28,7 @@
             orderBy,
             serverTimestamp,
             setLogLevel,
-            getDoc // ADDED for robust single-device check
+            runTransaction // NEW: Imported for atomic check-out
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // IMPORTANT: Log level set to debug for firestore
@@ -316,6 +316,7 @@
 
         /**
          * Handles the device check-out process.
+         * Enforces the single-device rule using a Firestore Transaction.
          * @param {Event} e 
          */
         async function handleCheckout(e) {
@@ -337,58 +338,70 @@
 
             const statusRef = doc(db, DEVICE_STATUS_PATH);
             const historyRef = collection(db, CHECKOUT_COLLECTION_PATH);
+            
+            // 1. Get a unique ID for the history log document outside the transaction
+            const newHistoryRef = doc(historyRef); 
+            const historyDocId = newHistoryRef.id;
 
             try {
                 document.getElementById('checkout-button').disabled = true;
 
-                // CRITICAL FIX: Read current status to enforce single device rule
-                const statusSnap = await getDoc(statusRef);
-                const currentStatus = statusSnap.data();
-                
-                if (currentStatus && !currentStatus.isAvailable) {
-                    showMessage("Error: The device is currently checked out. Please wait for it to be returned.", 'error');
-                    return; // Stop processing if not available
-                }
-                
-                // 1. Create a new history document first
-                const newHistoryRef = doc(historyRef);
+                // 2. RUN TRANSACTION: Atomically check status and update it to unavailable
+                await runTransaction(db, async (transaction) => {
+                    
+                    // Read the current status document within the transaction
+                    const statusSnap = await transaction.get(statusRef);
+                    
+                    // Check if the device is currently available
+                    if (!statusSnap.exists() || !statusSnap.data().isAvailable) {
+                        // Throwing a custom string aborts the transaction and signals the error
+                        throw "ALREADY_CHECKED_OUT"; 
+                    }
+
+                    // Data for the main status update
+                    const checkoutData = {
+                        name,
+                        email,
+                        checkedOutByUserId: userId,
+                        checkoutDate: serverTimestamp(), // Use serverTimestamp for atomic update
+                        expectedReturnDate,
+                        historyDocId: historyDocId
+                    };
+                    
+                    // Atomic Write: Mark the device unavailable and set current holder
+                    transaction.update(statusRef, {
+                        isAvailable: false,
+                        currentCheckout: checkoutData,
+                        lastUpdated: serverTimestamp()
+                    });
+
+                }); // End of transaction
+
+                // 3. If the transaction succeeded, perform the second, non-atomic write (history log)
                 const historyData = {
                     name,
                     email,
                     checkedOutByUserId: userId,
-                    checkoutDate: serverTimestamp(),
+                    // Note: Use serverTimestamp() again for history, Firestore handles the synchronization
+                    checkoutDate: serverTimestamp(), 
                     expectedReturnDate,
-                    checkinDate: null, // Will be updated on check-in
+                    checkinDate: null, 
                     currentStatus: 'ACTIVE'
                 };
                 await setDoc(newHistoryRef, historyData);
-                
-                // 2. Update the main status document
-                const checkoutData = {
-                    name,
-                    email,
-                    checkedOutByUserId: userId,
-                    checkoutDate: serverTimestamp(),
-                    expectedReturnDate,
-                    historyDocId: newHistoryRef.id // Reference to the history log
-                };
-
-                await updateDoc(statusRef, {
-                    isAvailable: false,
-                    currentCheckout: checkoutData,
-                    lastUpdated: serverTimestamp()
-                });
 
                 showMessage("Device successfully checked out! Refresh your browser to confirm persistence.", 'success');
                 clearForm();
 
             } catch (error) {
-                console.error("Check-out failed:", error);
-                // Check if the failure is due to permission denied
-                if (error.code === 'permission-denied') {
+                // Handle the transaction's specific error or a general Firestore error
+                if (error === "ALREADY_CHECKED_OUT") {
+                    showMessage("Error: The device is currently checked out by another user. Please wait for it to be returned.", 'error');
+                } else if (error.code === 'permission-denied') {
                     showMessage("Error: Permission Denied. Please ensure your Firestore Security Rules are published correctly.", 'error');
                 } else {
-                    showMessage(`Check-out failed: ${error.message}. Please try again.`, 'error');
+                    console.error("Check-out failed:", error);
+                    showMessage(`Check-out failed: ${error.message || error}. Please try again.`, 'error');
                 }
             } finally {
                  document.getElementById('checkout-button').disabled = false;
@@ -432,6 +445,8 @@
                 } else {
                     showMessage(`Check-in failed: ${error.message}. Please try again.`, 'error');
                 }
+            } finally {
+                 document.getElementById('checkin-button').disabled = false;
             }
         }
 
