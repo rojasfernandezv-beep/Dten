@@ -38,13 +38,28 @@
         let userId = null;
         let currentCheckoutId = null; // To track the document ID of the current checkout history record
 
-        // Global variables provided by the environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // --- CONFIGURATION FOR EXTERNAL HOSTING ---
+        // The Firebase configuration keys have been provided and inserted below.
+        const firebaseConfig = {
+            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
+            authDomain: "device-checkout-system.firebaseapp.com",
+            projectId: "device-checkout-system",
+            storageBucket: "device-checkout-system.firebasestorage.app",
+            messagingSenderId: "552885197205",
+            appId: "1:552885197205:web:2bfd659420f6442311be9c",
+            measurementId: "G-1R94ZGT22T", 
+        };
         
+        // We use a static ID for the deployed app since the environment variable is gone.
+        const appId = 'external-device-tracker'; 
+        const initialAuthToken = null; // Token is not available outside the environment.
+
+        // Firestore Paths are updated to reflect the static appId for data isolation
         const DEVICE_STATUS_PATH = `/artifacts/${appId}/public/data/device_status/status`;
         const CHECKOUT_COLLECTION_PATH = `/artifacts/${appId}/public/data/device_checkouts`;
+        // --- END CONFIGURATION ---
+
 
         // --- Utility Functions ---
 
@@ -91,22 +106,16 @@
          * Initializes Firebase and authenticates the user.
          */
         async function initFirebase() {
-            if (!firebaseConfig) {
-                console.error("Firebase config is missing. Cannot initialize app.");
-                return;
-            }
-            
+            // NOTE: Removed the placeholder check for firebaseConfig to resolve 'auth/configuration-not-found' error.
+            // We now rely on the try/catch block to handle any configuration issues.
             try {
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
 
-                // Sign in using the custom token or anonymously
-                if (initialAuthToken) {
-                    await signInWithCustomToken(auth, initialAuthToken);
-                } else {
-                    await signInAnonymously(auth);
-                }
+                // Since the initialAuthToken is no longer available, we sign in anonymously for public access.
+                // The history and status paths are public, so anonymous sign-in is appropriate.
+                await signInAnonymously(auth);
 
                 // Wait for auth state to be ready
                 onAuthStateChanged(auth, (user) => {
@@ -123,7 +132,12 @@
 
             } catch (error) {
                 console.error("Firebase initialization or sign-in failed:", error);
-                showMessage(`Firebase connection error: ${error.message}`, 'error');
+                // Check if the error is due to a missing/invalid config and guide the user.
+                let errorMessage = `Firebase connection error: ${error.message}`;
+                if (error.code === 'auth/configuration-not-found' || error.code === 'app/invalid-credential') {
+                     errorMessage = "Configuration Error: Please verify your API Key and other Firebase settings are correct.";
+                }
+                showMessage(errorMessage, 'error');
             }
         }
 
@@ -399,11 +413,7 @@
         // --- Event Listeners and Initialization ---
 
         document.addEventListener('DOMContentLoaded', () => {
-            if (firebaseConfig) {
-                initFirebase();
-            } else {
-                showMessage("Firebase environment variables are missing. Please provide the config.", 'error');
-            }
+            initFirebase();
             
             // Attach form submission handler
             document.getElementById('checkout-form').addEventListener('submit', handleCheckout);
