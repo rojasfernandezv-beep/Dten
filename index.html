@@ -68,27 +68,6 @@
             </div>
         </div>
         
-        <!-- Admin Actions Section -->
-        <div class="mb-8 p-4 border border-dashed border-gray-300 rounded-xl bg-gray-50 flex justify-between items-center flex-wrap gap-4">
-            <h2 class="text-xl font-semibold text-gray-700">Admin Actions</h2>
-            <div class="flex gap-3">
-                <button
-                    id="seed-devices-btn"
-                    class="py-2 px-4 rounded-lg bg-success text-white font-medium transition duration-150 transform hover:scale-[1.02] hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    disabled
-                >
-                    Seed Default Devices
-                </button>
-                <button
-                    id="clear-devices-btn"
-                    class="py-2 px-4 rounded-lg bg-danger text-white font-medium transition duration-150 transform hover:scale-[1.02] hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
-                    disabled
-                >
-                    Clear All Devices
-                </button>
-            </div>
-        </div>
-
         <!-- Device List Container -->
         <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
         <div id="device-list" class="space-y-4">
@@ -105,7 +84,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setDoc, deleteDoc, getDocs, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIGURATION FOR EXTERNAL HOSTING ---
         // This object has been replaced with your actual configuration keys.
@@ -140,8 +119,6 @@
             nameInput: document.getElementById('user-name-input'),
             emailInput: document.getElementById('user-email-input'),
             returnDateInput: document.getElementById('return-date-input'),
-            seedBtn: document.getElementById('seed-devices-btn'), 
-            clearBtn: document.getElementById('clear-devices-btn'), // New DOM element
         };
 
         let db, auth, userId = null;
@@ -172,59 +149,6 @@
             return { name, email, returnDate };
         }
         
-        // --- Database Seeding Function ---
-        async function seedDatabase() {
-            if (!devicesCollectionRef) return displayError("Database not initialized.");
-            
-            const defaultDevices = [
-                { id: "device_a_phone", name: "Pixel 8 Pro (Phone)", status: "available" },
-                { id: "device_b_tablet", name: "Pixel Tablet", status: "available" },
-                { id: "device_c_laptop", name: "MacBook Pro M3", status: "available" },
-            ];
-
-            try {
-                // Use setDoc for deterministic IDs (good for mock data)
-                await Promise.all(defaultDevices.map(device => {
-                    const docRef = doc(db, devicesCollectionRef.path, device.id);
-                    return setDoc(docRef, device, { merge: true });
-                }));
-                clearError();
-            } catch (e) {
-                displayError(`Error seeding database: ${e.message}`);
-            }
-        }
-        
-        // --- Database Clearing Function (NEW) ---
-        async function clearAllDevices() {
-            if (!devicesCollectionRef) return displayError("Database not initialized.");
-
-            DOM.clearBtn.disabled = true;
-            DOM.clearBtn.textContent = 'Clearing...';
-
-            try {
-                // Fetch all documents currently in the collection
-                const snapshot = await getDocs(query(devicesCollectionRef));
-                
-                // Batch delete all documents
-                await Promise.all(snapshot.docs.map(docToDelete => 
-                    deleteDoc(doc(db, devicesCollectionRef.path, docToDelete.id))
-                ));
-                
-                clearError();
-            } catch (e) {
-                displayError(`Error clearing devices: ${e.message}`);
-            } finally {
-                // Restore button state
-                DOM.clearBtn.disabled = false;
-                DOM.clearBtn.textContent = 'Clear All Devices';
-            }
-        }
-
-        // Attach event listeners
-        DOM.seedBtn.addEventListener('click', seedDatabase);
-        DOM.clearBtn.addEventListener('click', clearAllDevices);
-
-
         // --- Firestore Operations ---
         
         async function updateDeviceStatus(deviceId, status) {
@@ -342,16 +266,12 @@
                 const message = document.createElement('p');
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.textContent = userId 
-                    ? "No devices found in the system. Use the 'Seed Default Devices' button above to populate the list." 
+                    ? "No devices found in the system." 
                     : "Waiting for authentication...";
                 DOM.list.appendChild(message);
                 return;
             }
             
-            // This button text was confusing, so we remove the auto-update here.
-            // DOM.seedBtn.textContent = 'Devices Seeded (Refresh)';
-
-
             // Sort: Available first, then Checked Out, then Overdue
             devices.sort((a, b) => {
                 const statusA = a.status;
@@ -409,19 +329,12 @@
                         DOM.info.innerHTML = `<span class="font-semibold text-primary">User ID:</span> ${userId}`;
                         clearError();
                         
-                        // Enable both admin buttons once authenticated
-                        DOM.seedBtn.disabled = false;
-                        DOM.clearBtn.disabled = false;
-
-
                         // Start real-time data listener
                         startRealtimeListener();
                     } else {
                         userId = null;
                         DOM.info.innerHTML = `<span class="font-semibold text-danger">Not signed in. Cannot interact with devices.</span>`;
                         renderDeviceList([]);
-                        DOM.seedBtn.disabled = true;
-                        DOM.clearBtn.disabled = true;
                     }
                 });
 
@@ -445,11 +358,6 @@
                 renderDeviceList(devices);
             }, (err) => {
                 displayError(`Real-time Listener Error: ${err.message}`);
-                // Since this error likely means a permissions problem, we disable the seed button
-                // until the issue is resolved via Firebase Security Rules.
-                DOM.seedBtn.disabled = true;
-                DOM.clearBtn.disabled = true;
-                DOM.seedBtn.textContent = 'Permissions Error';
             });
         }
 
