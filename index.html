@@ -4,7 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Device Checkout System</title>
-    <!-- Load Tailwind CSS -->
+    <!-- Firebase configuration for your project -->
+    <script>
+        window.__firebase_config = JSON.stringify({
+            "apiKey": "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
+            "authDomain": "device-checkout-system.firebaseapp.com",
+            "projectId": "device-checkout-system",
+            "storageBucket": "device-checkout-system.appspot.com",
+            "messagingSenderId": "",  // <-- Fill in your messagingSenderId here!
+            "appId": ""               // <-- Fill in your appId here!
+        });
+        window.__app_id = "device-checkout-system";
+    </script>
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -26,18 +38,6 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
     </style>
-    <!-- Insert your Firebase project config here -->
-    <script>
-        window.__firebase_config = JSON.stringify({
-            "apiKey": "YOUR_API_KEY",
-            "authDomain": "YOUR_PROJECT_ID.firebaseapp.com",
-            "projectId": "YOUR_PROJECT_ID",
-            "storageBucket": "YOUR_PROJECT_ID.appspot.com",
-            "messagingSenderId": "YOUR_MESSAGING_SENDER_ID",
-            "appId": "YOUR_APP_ID"
-        });
-        window.__app_id = "default-app-id"; // You can customize this if needed
-    </script>
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8">
     <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
@@ -55,128 +55,4 @@
                 >
             </div>
             <div>
-                <label for="user-email-input" class="block text-sm font-medium text-gray-700">Email Address</label>
-                <input
-                    type="email"
-                    id="user-email-input"
-                    placeholder="jane@company.com"
-                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
-                >
-            </div>
-            <div>
-                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
-                <input
-                    type="date"
-                    id="return-date-input"
-                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
-                    min="2025-10-02"
-                >
-            </div>
-        </div>
-        <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
-        <div id="device-list" class="space-y-4">
-            <div id="loading-spinner" class="flex justify-center items-center py-10">
-                <svg class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-            </div>
-        </div>
-    </div>
-    <!-- Firebase SDK Imports and App Logic -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'default-app-id';
-        const initialAuthToken = typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : '';
-        let firebaseConfig = {};
-        const configString = (typeof window.__firebase_config === 'string' && window.__firebase_config.trim()) ? window.__firebase_config : null;
-
-        if (configString) {
-            try {
-                firebaseConfig = JSON.parse(configString);
-            } catch (e) {
-                console.error("CRITICAL ERROR: Failed to parse __firebase_config JSON. Environment issue suspected.", e);
-            }
-        }
-
-        const DOM = {
-            error: document.getElementById('error-message'),
-            list: document.getElementById('device-list'),
-            spinner: document.getElementById('loading-spinner'),
-            nameInput: document.getElementById('user-name-input'),
-            emailInput: document.getElementById('user-email-input'),
-            returnDateInput: document.getElementById('return-date-input'),
-        };
-
-        let db, auth, userId = null;
-        let devicesCollectionRef = null;
-        let currentDevices = [];
-
-        function displayError(message) {
-            console.error(message);
-            DOM.error.textContent = message;
-            DOM.error.classList.remove('hidden');
-        }
-        function clearError() {
-            DOM.error.classList.add('hidden');
-            DOM.error.textContent = '';
-        }
-        function getUserInfo() {
-            const name = DOM.nameInput.value.trim();
-            const email = DOM.emailInput.value.trim();
-            const returnDate = DOM.returnDateInput.value;
-            if (!name || !email || !returnDate) {
-                displayError("Please enter your Full Name, Email, and the Expected Return Date to check out a device.");
-                return null;
-            }
-            return { name, email, returnDate };
-        }
-        async function updateDeviceStatus(deviceId, status) {
-            if (status === 'checked_out' && !userId) {
-                return displayError("Authentication is pending. Please wait a moment before checking out a device.");
-            }
-            if (!devicesCollectionRef) return displayError("Database not initialized.");
-            const isCheckingOut = status === 'checked_out';
-            let updateData = { status: status };
-            if (isCheckingOut) {
-                const userInfo = getUserInfo();
-                if (!userInfo) return;
-                updateData.checkedOutBy = userId;
-                updateData.checkedOutByUserName = userInfo.name;
-                updateData.expectedReturnDate = userInfo.returnDate;
-                updateData.checkedOutAt = new Date().toISOString();
-            } else {
-                updateData.checkedOutBy = null;
-                updateData.checkedOutByUserName = null;
-                updateData.checkedOutByUserEmail = null;
-                updateData.expectedReturnDate = null;
-                updateData.checkedOutAt = null;
-            }
-            try {
-                const docRef = doc(db, devicesCollectionRef.path, deviceId);
-                await updateDoc(docRef, updateData);
-                clearError();
-            } catch (e) {
-                displayError(`Error updating device: ${e.message}`);
-            }
-        }
-        function createDeviceCard(device) {
-            const isCheckedOut = device.status === 'checked_out';
-            const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
-            const isPastDue = isCheckedOut && device.expectedReturnDate && (new Date(device.expectedReturnDate) < new Date());
-            const statusColor = isPastDue ? 'bg-warning' : (isCheckedOut ? 'bg-danger' : 'bg-success');
-            const statusText = isPastDue ? 'OVERDUE' : (isCheckedOut ? 'Checked Out' : 'Available');
-            const buttonText = isCheckedOutByMe ? 'Check In' : 'Check Out';
-            const buttonClass = isCheckedOutByMe ? 'bg-danger hover:bg-red-600' : 'bg-primary hover:bg-primary-600';
-            const buttonDisabled = isCheckedOut && !isCheckedOutByMe && userId !== null;
-            const card = document.createElement('div');
-            card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
-            const statusIndicator = `
-                <span class="w-3 h-3 rounded-full ${statusColor} mr-4 mt-2 flex-shrink-0" aria-label="Device Status"></span>
-                <div class="flex flex-col">
-                    <span class="
-
-
+                <label for="
