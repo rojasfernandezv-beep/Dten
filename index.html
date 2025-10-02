@@ -78,7 +78,7 @@
                 <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
                     Seed Initial Device Data
                 </button>
-                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system. (The seed data array is currently empty.)</p>
+                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system.</p>
             </div>
             <div>
                 <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
@@ -103,8 +103,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // NOTE: getDoc is imported here to fetch the current state for reservation date validation
-        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, getDocs, deleteDoc, addDoc, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, getDocs, deleteDoc, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
         const ESSENTIAL_FIREBASE_DEFAULTS = {
@@ -150,7 +149,7 @@
 
         let db, auth, userId = null;
         let devicesCollectionRef = null;
-        let reservationsCollectionRef = null; // New collection for the queue
+        let reservationsCollectionRef = null; 
         
         let currentDevices = []; // Holds the latest data from device snapshot
         let reservationsByDevice = {}; // { deviceId: [{...reservation data...}, ...] }
@@ -183,12 +182,14 @@
         /**
          * Finds the latest date this device is unavailable (either checked out or has a queued reservation).
          * @param {string} deviceId 
-         * @param {string} currentReturnDate The expectedReturnDate if the device is checked out.
+         * @param {string | null} currentReturnDate The expectedReturnDate if the device is checked out.
          * @returns {string} The latest unavailable date string (YYYY-MM-DD).
          */
         function getLatestUnavailableDate(deviceId, currentReturnDate) {
             const reservations = reservationsByDevice[deviceId] || [];
-            let latestDate = currentReturnDate || new Date().toISOString().split('T')[0]; // Default to today if no checkout
+            
+            // Start with today's date if the device isn't checked out
+            let latestDate = currentReturnDate || new Date().toISOString().split('T')[0]; 
 
             if (reservations.length > 0) {
                 // Since the queue is sorted by startDate in the listener, the last element has the latest date
@@ -314,9 +315,8 @@
                 return displayError(`Failed to read device state for validation: ${e.message}`);
             }
 
-            // Get the current reservation queue for validation
+            // Get the current reservation queue for validation and next action
             const deviceReservations = reservationsByDevice[deviceId] || [];
-            // Get the first reservation in the queue (if any)
             const nextReservation = deviceReservations.length > 0 ? deviceReservations[0] : null;
 
             let updateData = {};
@@ -360,7 +360,7 @@
                     const latestDate = getLatestUnavailableDate(deviceId, currentDevice.expectedReturnDate);
                     
                     if (userInfo.date <= latestDate) {
-                        return displayError(`Your reservation date (${userInfo.date}) must be strictly after the device's expected return or last reserved date (${latestDate}).`);
+                        return displayError(`Your reservation date (${userInfo.date}) must be strictly after the device's expected return or last reserved date (${latestDate}). Current latest date: ${latestDate}.`);
                     }
 
                     const reservationDoc = {
@@ -375,31 +375,23 @@
                     // Add the new reservation to the collection
                     await addDoc(reservationsCollectionRef, reservationDoc);
                     
-                    // If the device is currently 'available' and the queue was empty, change status to 'reserved'
+                    // If the device is currently 'available' or 'checked_out' but has no existing queue, change status if the queue is now populated.
+                    // This logic only fires if the first reservation is being placed.
                     if (currentDevice.status === 'available' && deviceReservations.length === 0) {
-                         // Only update device status if it's the very first reservation
+                         // The device is available and we just added the first reservation
                          await updateDoc(docRef, { status: 'reserved' });
                     }
                     
-                    // Status change handled, exit switch for addDoc
+                    // Reservation handled, exit switch for addDoc
                     return; 
 
                 case 'cancel_reservation': 
                     if (!nextReservation) return displayError("No immediate reservation found to cancel.");
                     
-                    // Security Check against the first person in the queue
-                    const currentUserName = DOM.nameInput.value.trim();
-                    const currentUserEmail = DOM.emailInput.value.trim();
-
-                    if (!currentUserName || currentUserName !== nextReservation.userName || 
-                        !currentUserEmail || currentUserEmail !== nextReservation.userEmail) {
-                         return displayError(`To cancel this reservation, please confirm your identity by entering the exact Name and Email used for the booking.`);
-                    }
-
                     // 1. Delete the first reservation document
                     await deleteDoc(doc(db, reservationsCollectionRef.path, nextReservation.id));
                     
-                    // 2. Check if there are other reservations remaining
+                    // 2. Check if there are other reservations remaining (after deletion)
                     const remainingReservations = deviceReservations.filter(r => r.id !== nextReservation.id);
                     newStatus = remainingReservations.length > 0 ? 'reserved' : 'available';
 
@@ -409,21 +401,16 @@
                     
                 case 'checkout_reserved':
                     if (!nextReservation) return displayError("No immediate reservation found to check out.");
-
-                    // Security Check against the first person in the queue
-                    const checkOutUserName = DOM.nameInput.value.trim();
-                    const checkOutUserEmail = DOM.emailInput.value.trim();
-
-                    if (!checkOutUserName || checkOutUserName !== nextReservation.userName || 
-                        !checkOutUserEmail || checkOutUserEmail !== nextReservation.userEmail) {
-                         return displayError(`To check out "${currentDevice.name}", please confirm your identity by entering the exact Name and Email used for the reservation.`);
-                    }
                     
                     // 1. Delete the reservation document
                     await deleteDoc(doc(db, reservationsCollectionRef.path, nextReservation.id));
                     
-                    // 2. Perform Checkout using the reservation details
+                    // 2. Determine the status of the device after this checkout
+                    const remainingReservationsAfterCheckout = deviceReservations.filter(r => r.id !== nextReservation.id);
+                    // The device is now checked out, regardless of the remaining queue.
                     newStatus = 'checked_out';
+                    
+                    // 3. Perform Checkout using the reservation details
                     updateData = {
                         status: newStatus,
                         ...clearCheckoutPayload,
@@ -458,8 +445,6 @@
             
             const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
             const deviceReservations = reservationsByDevice[device.id] || [];
-
-            // Find the first reservation in the queue
             const nextReservation = deviceReservations.length > 0 ? deviceReservations[0] : null;
 
             // Check for overdue checkout or expired reservation (past current date)
@@ -480,7 +465,7 @@
             if (isReserved) {
                 // The status is 'reserved' if it's on the shelf but has a future booking
                 statusColor = isPastDue ? 'bg-warning' : 'bg-info';
-                statusText = 'Reserved';
+                statusText = 'Reserved (Next User in Queue)';
                 
                 if (nextReservation) {
                      details = `
@@ -505,11 +490,11 @@
             if (deviceReservations.length > 0) {
                 queueDetails = `
                     <div class="mt-4 pt-3 border-t border-gray-100">
-                        <p class="font-bold text-sm text-info mb-1">Reservation Queue (${deviceReservations.length} bookings):</p>
+                        <p class="font-bold text-sm text-info mb-1">Reservation Queue (${deviceReservations.length} total bookings):</p>
                         <ul class="text-xs space-y-1 pl-3 list-disc text-gray-700">
                             ${deviceReservations.map((res, index) => `
                                 <li class="${res.userId === userId ? 'font-bold text-primary' : ''}">
-                                    ${index + 1}. ${res.userName} (Starts: ${res.startDate})
+                                    ${index + 1}. ${res.userName} (Starts: ${res.startDate})${index === 0 && isReserved ? ' - NEXT UP' : ''}
                                 </li>
                             `).join('')}
                         </ul>
@@ -541,19 +526,15 @@
                 `);
             } else if (isReserved) {
                 // Device is RESERVED (on the shelf, booked for the immediate future)
-                if (nextReservation) {
-                    buttonsHtml.push(`
-                        <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
-                            Check Out Now
-                        </button>
-                        <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
-                            Cancel Reservation
-                        </button>
-                    `);
-                }
-                
-                // Allow chaining a reservation after the current reserved slot
+                // The buttons are visible if status is 'reserved', regardless of transient nextReservation state.
                 buttonsHtml.push(`
+                    <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
+                        Check Out Now
+                    </button>
+                    <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
+                        Cancel Reservation
+                    </button>
+                    <!-- Always allow chaining a reservation after the current reserved slot -->
                     <button data-action="reserve" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600 ml-2">
                         Reserve for Later
                     </button>
@@ -639,7 +620,10 @@
                                  displayError(`To check in "${device.name}", please ensure your full Name and Email match the details used for checkout.`);
                                  return;
                             }
-                        } else if ((action === 'cancel_reservation' || action === 'checkout_reserved') && next) {
+                        } else if ((action === 'cancel_reservation' || action === 'checkout_reserved')) {
+                             if (!next) {
+                                return displayError("There is no immediate reservation to cancel or check out.");
+                             }
                              const requiredUserName = next.userName;
                              const requiredUserEmail = next.userEmail;
 
@@ -648,8 +632,6 @@
                                   displayError(`To perform this action, please confirm your identity by entering the exact Name and Email used for the reservation.`);
                                   return;
                              }
-                        } else if (action === 'cancel_reservation' || action === 'checkout_reserved') {
-                             return displayError("There is no immediate reservation to cancel or check out.");
                         }
 
                         updateDeviceStatus(device.id, action);
@@ -671,7 +653,7 @@
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.innerHTML = `
                     <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the **Seed** button to add the devices. (The seed data array is currently empty.)</p>
+                    <p class="mb-4">Click the **Seed** button to add the devices. (Two devices are now included in the seed array.)</p>
                     <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
                 `;
                 DOM.list.appendChild(message);
@@ -680,7 +662,7 @@
                 return;
             }
             
-            DOM.seedContainer.classList.add('hidden'); // Hide seed/clear buttons when data exists (optional)
+            // DOM.seedContainer.classList.add('hidden'); // Optional: keep buttons visible for clearing/re-seeding
             
             // Sort: Overdue/Expired > Checked Out > Reserved > Available
             devices.sort((a, b) => {
@@ -710,7 +692,7 @@
         function startReservationsListener() {
             if (!reservationsCollectionRef) return;
             
-            onSnapshot(reservationsCollectionRef, (snapshot) => {
+            onSnapshot(query(reservationsCollectionRef), (snapshot) => {
                 const tempMap = {};
                 snapshot.docs.forEach(doc => {
                     const data = doc.data();
@@ -829,4 +811,3 @@
     </script>
 </body>
 </html>
-
