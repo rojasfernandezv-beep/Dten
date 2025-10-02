@@ -58,7 +58,7 @@
                 >
             </div>
             <div>
-                <!-- UPDATED LABEL TEXT -->
+                <!-- Label is 'Select a date' -->
                 <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
                 <input
                     type="date"
@@ -552,7 +552,7 @@
 
                         if (!currentUserName || currentUserName !== requiredUserName ||
                             !currentUserEmail || currentUserEmail !== requiredUserEmail) {
-                             // UPDATED ERROR MESSAGE: Removed the revealing information
+                             // NON-REVEALING ERROR MESSAGE
                              displayError(`To check in "${device.name}", please ensure your full Name and Email match the details used for checkout.`);
                              return;
                         }
@@ -567,7 +567,7 @@
 
                         if (!currentUserName || currentUserName !== requiredUserName || 
                             !currentUserEmail || currentUserEmail !== requiredUserEmail) {
-                             // UPDATED ERROR MESSAGE: Removed the revealing information
+                             // NON-REVEALING ERROR MESSAGE
                              displayError(`To cancel the reservation for "${device.name}", please confirm your identity by entering the exact Name and Email you used to reserve it.`);
                              return;
                         }
