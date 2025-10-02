@@ -523,8 +523,7 @@
                         </button>
                     `);
                 } else {
-                    // Reserved by Others: Show the standard Reserve option. This action will claim the reservation slot, 
-                    // but is now guarded by a date validation check in updateDeviceStatus.
+                    // Reserved by Others: Show the standard Reserve option. This action is guarded by date validation.
                     buttonsHtml.push(`
                         <!-- Action: reserve_available will claim the reservation, replacing the existing one if the date is later. -->
                         <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
@@ -626,7 +625,7 @@
                          // If confirmation passes, proceed with 1-Click reserved checkout
                          updateDeviceStatus(device.id, action, device);
                     } else if (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue') {
-                        // All these actions require form data, and reserve_available/reserve_queue will now handle date checks
+                        // All these actions require form data, and reserve_available/reserve_queue handles date checks
                         updateDeviceStatus(device.id, action);
                     }
                 });
