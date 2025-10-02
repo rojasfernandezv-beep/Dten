@@ -86,36 +86,22 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- CONFIGURATION FOR EXTERNAL HOSTING ---
-        // This object has been replaced with your actual configuration keys.
-        const EXTERNAL_FIREBASE_CONFIG = {
-          apiKey: "AIzaSyB52DNsoD0DutAWJCnQYwpBqwB0CM",
-          authDomain: "device-checkout-system.firebaseapp.com",
-          projectId: "device-checkout-system",
-          storageBucket: "device-checkout-system.firebasestorage.app",
-          messagingSenderId: "552885197205",
-          appId: "1:552885197205:web:2bfd659420f6442311be9c",
-          measurementId: "G-1R94ZGT22T"
-        };
+        // --- Initialization Constants (Relying ONLY on Canvas Globals) ---
         
-        // --- Initialization Constants ---
-        const EXTERNAL_APP_ID = 'external-device-tracker';
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
         
-        const appId = typeof __app_id !== 'undefined' ? __app_id : EXTERNAL_APP_ID;
-        const EXTERNAL_AUTH_TOKEN = ''; // Placeholder for external use
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : EXTERNAL_AUTH_TOKEN;
-
         let firebaseConfig;
         try {
-            // Priority 1: Use Canvas global config
-            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : EXTERNAL_FIREBASE_CONFIG;
+            // MANDATORY: Parse the global config provided by the Canvas environment.
+            firebaseConfig = JSON.parse(__firebase_config);
         } catch (e) {
-            console.error("Failed to parse __firebase_config. Using external fallback.", e);
-            firebaseConfig = EXTERNAL_FIREBASE_CONFIG;
+            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Environment issue suspected.", e);
+            // Use an empty object as a safe, non-fatal fallback.
+            firebaseConfig = {}; 
         }
         
         const DOM = {
-            // Removed DOM.info
             error: document.getElementById('error-message'),
             list: document.getElementById('device-list'),
             spinner: document.getElementById('loading-spinner'),
@@ -169,11 +155,8 @@
                 const userInfo = getUserInfo();
                 if (!userInfo) return; // Error handled by getUserInfo
                 
-                // NOTE: No date conflict validation here, allowing multiple checkouts on the same date.
-
                 updateData.checkedOutBy = userId;
                 updateData.checkedOutByUserName = userInfo.name;
-                // updateData.checkedOutByUserEmail = userInfo.email; // Kept email in database for admin/check-in logic
                 updateData.expectedReturnDate = userInfo.returnDate; // New field
                 updateData.checkedOutAt = new Date().toISOString();
                 
@@ -207,14 +190,13 @@
             
             const buttonText = isCheckedOutByMe ? 'Check In' : 'Check Out';
             const buttonClass = isCheckedOutByMe ? 'bg-danger hover:bg-red-600' : 'bg-primary hover:bg-primary-600';
-            // Disable button if it's checked out by someone else
-            const buttonDisabled = isCheckedOut && !isCheckedOutByMe; 
+            // Disable button if it's checked out by someone else AND we are authenticated
+            // If userId is null (pending auth), we allow the button to remain active until updateDoc fails inside updateDeviceStatus
+            const buttonDisabled = isCheckedOut && !isCheckedOutByMe && userId !== null; 
 
             const card = document.createElement('div');
             card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
             
-            // Expected Return Date removed from public display per previous request
-                
             const statusIndicator = `
                 <span class="w-3 h-3 rounded-full ${statusColor} mr-4 mt-2 flex-shrink-0" aria-label="Device Status"></span>
                 <div class="flex flex-col">
@@ -225,7 +207,6 @@
                     ${isCheckedOut ? `
                         <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
                             <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'Another User'}</p>
-                            <!-- Email and Return Date hidden for privacy -->
                         </div>
                     ` : ''}
                 </div>
@@ -247,12 +228,11 @@
             // Attach click handler
             const button = card.querySelector(`#btn-${device.id}`);
             button.addEventListener('click', () => {
-                // The check for userId is now inside updateDeviceStatus, but we keep a local check for non-blocking errors.
-                if (!userId) {
-                    displayError("Authentication is pending. Please wait a moment.");
-                    // Allow check-out to proceed if the user insists, but updateDeviceStatus will block it.
-                    // We only prevent check-in if userId is not available.
-                    if (isCheckedOutByMe) return; 
+                
+                // If the user tries to interact while authentication is pending:
+                if (userId === null) {
+                    displayError("Authentication is currently pending. Please wait a moment for the connection to finalize.");
+                    if (isCheckedOutByMe) return; // Prevent check-in until we know who the user is.
                 }
 
                 if (isCheckedOutByMe) {
@@ -266,10 +246,8 @@
                     }
                     
                     if (currentUserName === requiredUserName) {
-                        // Name matches, proceed with check-in
                         updateDeviceStatus(device.id, 'available');
                     } else {
-                        // Name mismatch
                         displayError(`Check-in failed for "${device.name}". The name you entered ("${currentUserName}") does not match the name recorded for this checkout ("${requiredUserName}").`);
                     }
 
@@ -288,14 +266,12 @@
         function renderDeviceList(devices) {
             DOM.list.innerHTML = '';
             
-            // This is where the loading spinner is removed, ensuring it only happens once auth state is checked.
             const spinner = document.getElementById('loading-spinner');
             if(spinner) spinner.remove();
 
             if (devices.length === 0) {
                 const message = document.createElement('p');
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
-                // Simplified message: Now it just says no devices found, regardless of auth status.
                 message.textContent = "No devices found in the system. Add devices via the Firestore console."; 
                 DOM.list.appendChild(message);
                 return;
@@ -326,8 +302,9 @@
         // --- Main Initialization and Authentication ---
 
         async function initFirebase() {
-            if (!firebaseConfig) {
-                return displayError("Firebase configuration is missing.");
+            if (!Object.keys(firebaseConfig).length) {
+                // Only show this error if the environment config was truly empty
+                return displayError("Firebase configuration is missing. Cannot start application.");
             }
 
             try {
@@ -336,17 +313,12 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // --- FIX: Start data listener immediately, decoupled from Auth State ---
-                // MANDATORY PUBLIC Firestore path for shared resources
+                // 1. Setup Firestore Collection and Listener (Independent of Auth State)
                 const collectionPath = `artifacts/${appId}/public/data/devices`;
                 devicesCollectionRef = collection(db, collectionPath);
-                
-                // Start real-time data listener immediately after setting the collection path.
                 startRealtimeListener();
-                // ----------------------------------------------------------------------
-
-
-                // Authentication Logic: Use custom token if available, otherwise sign in anonymously.
+                
+                // 2. Perform Authentication in the background
                 const authenticateUser = async () => {
                     try {
                         if (initialAuthToken) {
@@ -356,11 +328,12 @@
                         }
                     } catch(e) {
                         console.error("Authentication failed:", e);
+                        // The API Key error should be resolved now, but we keep this handler.
                     }
                 };
                 authenticateUser();
 
-                // Set up Auth State Observer - only used to set userId for interaction logic
+                // 3. Set up Auth State Observer - only used to set userId for interaction logic
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
@@ -368,8 +341,8 @@
                         console.log("Authenticated with user ID:", userId); 
                     } else {
                         userId = null;
+                        // This handles cases where auth fails (like the API Key error, which should be fixed now)
                     }
-                    // Clear errors after authentication resolves
                     clearError();
                 });
 
@@ -391,9 +364,11 @@
                     ...doc.data(),
                 }));
 
-                currentDevices = devices; // IMPORTANT: Update the global state
+                currentDevices = devices; 
                 renderDeviceList(devices);
             }, (err) => {
+                // This is the error handler for "Missing or insufficient permissions"
+                // It should disappear once authentication succeeds.
                 displayError(`Real-time Listener Error: ${err.message}`);
             });
         }
