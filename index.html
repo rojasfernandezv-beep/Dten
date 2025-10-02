@@ -78,7 +78,7 @@
                 <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
                     Seed Initial Device Data
                 </button>
-                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system. (Currently, no devices are defined in the seed data.)</p>
+                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system. (The seed data array is currently empty.)</p>
             </div>
             <div>
                 <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
@@ -103,7 +103,8 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // NOTE: getDoc is imported here to fetch the current state for reservation date validation
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
         const ESSENTIAL_FIREBASE_DEFAULTS = {
@@ -274,10 +275,23 @@
             if (!devicesCollectionRef) return displayError("Database not initialized.");
             
             // Re-get userInfo only if needed for standard checkout/reservation
-            // Note: reserve_available is used for both available and reserved (takeover) states, requiring form data.
             const needsFormInfo = (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue');
             const userInfo = needsFormInfo ? getUserInfo() : null;
             if (needsFormInfo && !userInfo) return; // Error handled by getUserInfo
+
+            // Fetch current device state for validation purposes
+            const docRef = doc(db, devicesCollectionRef.path, deviceId);
+            let currentDevice = null;
+            
+            try {
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    return displayError("Device not found.");
+                }
+                currentDevice = docSnap.data();
+            } catch(e) {
+                return displayError(`Failed to read device state for validation: ${e.message}`);
+            }
 
             let updateData = {};
             let newStatus = '';
@@ -327,8 +341,20 @@
                     break;
                 
                 case 'reserve_available':
-                    // Reserves an available item, changing its status to 'reserved'. 
-                    // Also used to take over an existing reservation when the device is reserved by others.
+                    // Reserves an available item, or takes over an existing reservation.
+                    
+                    const isReservedByOther = currentDevice.status === 'reserved' && currentDevice.reservedBy !== userId;
+                    
+                    if (isReservedByOther) {
+                        const existingEndDate = currentDevice.reservationEndDate; // e.g., "2025-10-10"
+                        const requestedEndDate = userInfo.date;                   // e.g., "2025-10-10"
+                        
+                        // Check if the requested date is on or before the existing reservation end date
+                        if (requestedEndDate <= existingEndDate) { 
+                            return displayError(`The device is reserved until ${existingEndDate}. Please select a date strictly after this date to place a new reservation.`);
+                        }
+                    }
+
                     newStatus = 'reserved';
                     updateData = {
                         status: newStatus,
@@ -379,7 +405,7 @@
             }
 
             try {
-                const docRef = doc(db, devicesCollectionRef.path, deviceId);
+                // The docRef is already defined from the getDoc operation
                 await updateDoc(docRef, updateData);
                 clearError();
                 console.log(`Device ${deviceId} status updated to: ${newStatus}`);
@@ -497,9 +523,10 @@
                         </button>
                     `);
                 } else {
-                    // Reserved by Others: Show the standard Reserve option. This action will claim the reservation slot.
+                    // Reserved by Others: Show the standard Reserve option. This action will claim the reservation slot, 
+                    // but is now guarded by a date validation check in updateDeviceStatus.
                     buttonsHtml.push(`
-                        <!-- Action: reserve_available will claim the reservation, replacing the existing one. -->
+                        <!-- Action: reserve_available will claim the reservation, replacing the existing one if the date is later. -->
                         <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
                             Reserve
                         </button>
@@ -599,7 +626,7 @@
                          // If confirmation passes, proceed with 1-Click reserved checkout
                          updateDeviceStatus(device.id, action, device);
                     } else if (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue') {
-                        // All these actions require form data
+                        // All these actions require form data, and reserve_available/reserve_queue will now handle date checks
                         updateDeviceStatus(device.id, action);
                     }
                 });
