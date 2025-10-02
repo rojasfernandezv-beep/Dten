@@ -91,7 +91,6 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        // NOTE: Added 'setDoc' to imports for the seeding function
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
@@ -131,7 +130,6 @@
             nameInput: document.getElementById('user-name-input'),
             emailInput: document.getElementById('user-email-input'),
             returnDateInput: document.getElementById('return-date-input'),
-            // NEW DOM Elements
             seedContainer: document.getElementById('seed-data-container'),
             seedButton: document.getElementById('seed-data-button'),
         };
@@ -189,6 +187,7 @@
                     status: "checked_out",
                     checkedOutBy: "seed-user-123",
                     checkedOutByUserName: "Test User",
+                    checkedOutByUserEmail: "test.user@example.com", // Added email for seed data
                     expectedReturnDate: nextWeek,
                     checkedOutAt: new Date().toISOString()
                 }
@@ -228,13 +227,16 @@
                 
                 updateData.checkedOutBy = userId;
                 updateData.checkedOutByUserName = userInfo.name;
+                // FIX: Store the user email
+                updateData.checkedOutByUserEmail = userInfo.email; 
                 updateData.expectedReturnDate = userInfo.returnDate;
                 updateData.checkedOutAt = new Date().toISOString();
                 
             } else {
                 updateData.checkedOutBy = null;
                 updateData.checkedOutByUserName = null;
-                updateData.checkedOutByUserEmail = null;
+                // FIX: Ensure email field is also cleared on check-in
+                updateData.checkedOutByUserEmail = null; 
                 updateData.expectedReturnDate = null;
                 updateData.checkedOutAt = null;
             }
@@ -275,6 +277,7 @@
                     ${isCheckedOut ? `
                         <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
                             <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'Another User'}</p>
+                            ${device.checkedOutByUserEmail ? `<p><span class="font-semibold">Email:</span> ${device.checkedOutByUserEmail}</p>` : ''}
                         </div>
                     ` : ''}
                 </div>
@@ -331,9 +334,13 @@
             if(spinner) spinner.remove();
 
             if (devices.length === 0) {
-                const message = document.createElement('p');
+                const message = document.createElement('div');
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
-                message.textContent = "No devices found in the system. Add devices via the Firestore console."; 
+                message.innerHTML = `
+                    <p class="font-semibold text-lg mb-2">No Devices Found</p>
+                    <p class="mb-4">Click the button above to seed the system with four sample devices to get started.</p>
+                    <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
+                `;
                 DOM.list.appendChild(message);
                 
                 // Show the seed button when the list is empty
