@@ -58,7 +58,7 @@
                 >
             </div>
             <div>
-                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Expected Return Date</label>
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
                 <input
                     type="date"
                     id="return-date-input"
@@ -223,8 +223,7 @@
                     ${isCheckedOut ? `
                         <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
                             <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'N/A'}</p>
-                            <p><span class="font-semibold">Expected Return:</span> <span class="${isPastDue ? 'text-warning font-extrabold' : 'text-gray-700'}">${dateDisplay}</span></p>
-                            <p><span class="font-semibold">Email:</span> <a href="mailto:${device.checkedOutByUserEmail}" class="text-primary hover:underline">${device.checkedOutByUserEmail || 'N/A'}</a></p>
+                            <!-- Expected Return Date and Email are intentionally hidden for privacy and simplicity -->
                         </div>
                     ` : ''}
                 </div>
