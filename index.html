@@ -344,7 +344,7 @@
             try {
                 document.getElementById('checkout-button').disabled = true;
 
-                // CRITICAL FIX: Use runTransaction to make status check and history write atomic
+                // CRITICAL: Use runTransaction to make status check and history write atomic
                 await runTransaction(db, async (transaction) => {
                     
                     // 1. Read the current status document within the transaction
@@ -352,11 +352,15 @@
                     const statusData = statusSnap.data();
                     
                     // 2. CHECK: If the device is not available, throw a custom error to abort
-                    if (statusData && !statusData.isAvailable) {
+                    // This is the race condition guard!
+                    if (!statusSnap.exists() || !statusData.isAvailable) {
+                        // Log a detailed error if the block condition is met
+                        console.error("TRANSACTION ABORTED: Device is already checked out.", statusData); 
                         throw "ALREADY_CHECKED_OUT"; 
                     }
 
                     // 3. Setup: Get a unique ID for the new history log document
+                    // Must be created here or use a client-generated ID
                     const newHistoryRef = doc(historyCollectionRef); 
                     const historyDocId = newHistoryRef.id;
 
