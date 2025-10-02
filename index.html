@@ -365,14 +365,27 @@
 
                 case 'reserve_queue':
                     // Reserves a checked-out item. Status remains 'checked_out' (by omission).
-                    // This action is allowed if no one is in the queue, OR if the current user is already in the queue.
-                    newStatus = 'checked_out (reservation queued)';
                     
-                    // Simple logic: if the user is already the queued person, just overwrite/update their existing reservation date.
+                    // --- RESERVATION CHAINING LOGIC ---
+                    const existingQueueEndDate = currentDevice.reservationEndDate;
+                    const requestedQueueEndDate = userInfo.date;
+                    
+                    if (existingQueueEndDate) {
+                         // A queue already exists. New reservation must be AFTER the existing one.
+                        if (requestedQueueEndDate <= existingQueueEndDate) { 
+                            // Note: We use <= here because we are trying to chain reservations. 
+                            return displayError(`To join the reservation queue, your date (${requestedQueueEndDate}) must be strictly after the current reserved date (${existingQueueEndDate}).`);
+                        }
+                    }
+
+                    // If validation passes (or no queue exists), we overwrite the existing queue entry.
+                    newStatus = 'checked_out (reservation queued)';
                     updateData = {
-                        ...reservationPayload, // Only update reservation fields
+                        ...reservationPayload, // Only update reservation fields (overwrites any existing queue)
                         // NOTE: 'status' is omitted, keeping it as 'checked_out'
                     };
+                    // --- END RESERVATION CHAINING LOGIC ---
+                    
                     break;
 
                 case 'cancel_reservation': 
@@ -425,12 +438,10 @@
             const isAvailable = device.status === 'available';
             
             const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
-            // Removed isReservedByMe calculation as it is not needed for the Reserved button logic
             
             // Check if there is a pending reservation (regardless of primary status)
             const hasPendingReservation = !!device.reservedBy; 
             const hasPendingReservationByMe = hasPendingReservation && device.reservedBy === userId;
-            const hasPendingReservationByOther = hasPendingReservation && device.reservedBy !== userId;
             
             // Check for overdue checkout or expired reservation (past current date)
             const today = new Date().toISOString().split('T')[0];
@@ -501,25 +512,18 @@
                             Check In
                         </button>
                     `);
-                } else if (!hasPendingReservation || hasPendingReservationByMe) { 
-                    // CRITICAL FIX: If no one is queued, OR if the current user is already the queued person (hasPendingReservationByMe),
-                    // allow them to re-queue (which updates their existing reservation date).
+                } else { 
+                    // Checked Out by Others (whether queued or not): Show Reserve for Later.
+                    // The date validation in updateDeviceStatus will enforce the queue chain logic.
                     buttonsHtml.push(`
                         <!-- Action: reserve_queue -->
                         <button data-action="reserve_queue" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
                             Reserve for Later
                         </button>
                     `);
-                } else {
-                     // Checked Out by Others AND Reservation is Queued BY OTHER: Disabled button
-                    buttonsHtml.push(`
-                        <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
-                            Reservation Queued (by Other)
-                        </button>
-                    `);
                 }
             } else if (isReserved) {
-                // Device is RESERVED. Show all primary reservation actions as requested by the user.
+                // Device is RESERVED. Show all primary reservation actions.
                 
                 // 1. Reserve (Allows another user to book a time *after* the current reservation ends)
                 buttonsHtml.push(`
@@ -583,7 +587,7 @@
                     const action = button.getAttribute('data-action');
                     
                     if (userId === null) {
-                        displayError("Authentication is currently pending. Please wait a moment for the connection to finalize.");
+                        displayError("Authentication is currently pending. Please wait a moment before taking action.");
                         return; 
                     }
 
