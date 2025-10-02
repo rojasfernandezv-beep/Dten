@@ -202,7 +202,8 @@
             
             const buttonText = isCheckedOutByMe ? 'Check In' : 'Check Out';
             const buttonClass = isCheckedOutByMe ? 'bg-danger hover:bg-red-600' : 'bg-primary hover:bg-primary-600';
-            const buttonDisabled = isCheckedOut && !isCheckedOutByMe; // Block others from checking out
+            // Disable button if it's checked out by someone else
+            const buttonDisabled = isCheckedOut && !isCheckedOutByMe; 
 
             const card = document.createElement('div');
             card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
@@ -247,11 +248,14 @@
                 if (!userId) return displayError("Authentication is pending. Please wait or refresh.");
 
                 if (isCheckedOutByMe) {
-                    // Check In
+                    // Case 1: Check In
                     updateDeviceStatus(device.id, 'available');
                 } else if (!isCheckedOut) {
-                    // Check Out (requires user info)
+                    // Case 2: Check Out (Device is available)
                     updateDeviceStatus(device.id, 'checked_out');
+                } else {
+                    // Case 3 (NEW): Attempting to Check Out a device that is already checked out by someone else
+                    displayError(`Device "${device.name}" is not available for checkout. It is currently checked out by ${device.checkedOutByUserName || 'another user'}.`);
                 }
             });
 
