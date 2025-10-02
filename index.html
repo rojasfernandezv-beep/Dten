@@ -42,9 +42,10 @@
 
         // --- CONFIGURATION: USE GLOBAL ENVIRONMENT VARIABLES ---
         // Retrieve config and app ID from global variables
-        const firebaseConfig = typeof __firebase_config !== 'undefined' 
+        // Added a check for existence and a safe fallback to an empty object {}
+        const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config) 
             ? JSON.parse(__firebase_config) 
-            : null;
+            : {}; 
         // THIS MUST MATCH THE PATH USED IN THE FIRESTORE SECURITY RULES (e.g., 'external-device-tracker')
         const appId = typeof __app_id !== 'undefined' 
             ? __app_id 
@@ -104,8 +105,9 @@
          */
         async function initFirebase() {
             try {
-                if (!firebaseConfig) {
-                    showMessage("Error: Firebase configuration is missing.", 'error');
+                // Check if firebaseConfig is null or an empty object (which it would be if the global variable was missing)
+                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
+                    showMessage("Error: Firebase configuration is missing or empty. Please ensure the required environment variables are set.", 'error');
                     return;
                 }
 
