@@ -29,10 +29,8 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8">
     <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
-        <h1 class="text-4xl font-extrabold text-gray-800 mb-2">Device Checkout Hub</h1>
-        <p id="user-info" class="text-sm text-gray-500 mb-6 border-b pb-4">
-            <span class="font-semibold text-primary">Connecting...</span>
-        </p>
+        <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">Device Checkout Hub</h1>
+        <!-- Removed the visible user-info/connection status area -->
 
         <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 rounded-lg" role="alert"></div>
         
@@ -83,7 +81,8 @@
     <!-- Firebase SDK Imports and Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // NOTE: Added signInWithCustomToken to imports
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- CONFIGURATION FOR EXTERNAL HOSTING ---
@@ -102,6 +101,9 @@
         const EXTERNAL_APP_ID = 'external-device-tracker';
         
         const appId = typeof __app_id !== 'undefined' ? __app_id : EXTERNAL_APP_ID;
+        const EXTERNAL_AUTH_TOKEN = ''; // Placeholder for external use
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : EXTERNAL_AUTH_TOKEN;
+
         let firebaseConfig;
         try {
             // Priority 1: Use Canvas global config
@@ -112,7 +114,7 @@
         }
         
         const DOM = {
-            info: document.getElementById('user-info'),
+            // info: document.getElementById('user-info'), // Removed from DOM
             error: document.getElementById('error-message'),
             list: document.getElementById('device-list'),
             spinner: document.getElementById('loading-spinner'),
@@ -153,7 +155,7 @@
         // --- Firestore Operations ---
         
         async function updateDeviceStatus(deviceId, status) {
-            if (!devicesCollectionRef) return displayError("Database not initialized.");
+            if (!devicesCollectionRef) return displayError("Database not initialized or failed to authenticate.");
             
             const isCheckingOut = status === 'checked_out';
             let updateData = { status: status };
@@ -241,7 +243,7 @@
             // Attach click handler
             const button = card.querySelector(`#btn-${device.id}`);
             button.addEventListener('click', () => {
-                if (!userId) return displayError("Authentication is pending. Please wait or refresh.");
+                if (!userId) return displayError("App is initializing. Please wait a moment.");
 
                 if (isCheckedOutByMe) {
                     // Case 1: Check In (NAME CONFIRMATION LOGIC)
@@ -262,7 +264,7 @@
                     }
 
                 } else if (!isCheckedOut) {
-                    // Case 2: Check Out (Device is available) - Date validation happens inside updateDeviceStatus
+                    // Case 2: Check Out (Device is available)
                     updateDeviceStatus(device.id, 'checked_out');
                 } else {
                     // Case 3: Attempting to Check Out a device that is already checked out by someone else
@@ -276,13 +278,14 @@
         function renderDeviceList(devices) {
             DOM.list.innerHTML = '';
             
+            // Remove the spinner once we have the first snapshot of data (auth complete)
+            const spinner = document.getElementById('loading-spinner');
+            if(spinner) spinner.remove();
+
             if (devices.length === 0) {
-                DOM.spinner.remove();
                 const message = document.createElement('p');
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
-                message.textContent = userId 
-                    ? "No devices found in the system." 
-                    : "Waiting for authentication...";
+                message.textContent = "No devices found in the system. Add devices via the Firestore console.";
                 DOM.list.appendChild(message);
                 return;
             }
@@ -322,40 +325,49 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // Authentication Logic (Retained from previous fix)
+                // Authentication Logic: Use custom token if available, otherwise sign in anonymously.
                 const authenticateUser = async () => {
                     try {
-                        await signInAnonymously(auth);
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
                     } catch(e) {
-                        console.error("Anonymous Sign-in failed:", e);
+                        console.error("Authentication failed:", e);
                     }
                 };
                 authenticateUser();
 
                 // Set up Auth State Observer
                 onAuthStateChanged(auth, (user) => {
-                    DOM.spinner.remove();
                     if (user) {
                         userId = user.uid;
+                        // For debugging purposes only
+                        console.log("Authenticated with user ID:", userId); 
+                        
                         // MANDATORY PUBLIC Firestore path for shared resources
                         const collectionPath = `artifacts/${appId}/public/data/devices`;
                         devicesCollectionRef = collection(db, collectionPath);
                         
-                        DOM.info.innerHTML = `<span class="font-semibold text-primary">User ID:</span> ${userId}`;
                         clearError();
                         
                         // Start real-time data listener
                         startRealtimeListener();
                     } else {
                         userId = null;
-                        DOM.info.innerHTML = `<span class="font-semibold text-danger">Not signed in. Cannot interact with devices.</span>`;
-                        renderDeviceList([]);
+                        console.error("Authentication failed or pending.");
+                        // If auth fails, we stop loading and show the empty list message.
+                        const spinner = document.getElementById('loading-spinner');
+                        if(spinner) spinner.remove();
+                        renderDeviceList([]); 
                     }
                 });
 
             } catch (e) {
-                DOM.spinner.remove();
-                displayError(`Configuration Error: Please verify your API Key and other Firebase settings are correct. Details: ${e.message}`);
+                const spinner = document.getElementById('loading-spinner');
+                if(spinner) spinner.remove();
+                displayError(`Application Error: Cannot initialize database. Details: ${e.message}`);
             }
         }
         
