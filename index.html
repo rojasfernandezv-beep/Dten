@@ -58,7 +58,8 @@
                 >
             </div>
             <div>
-                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Expected Return/Reservation End Date</label>
+                <!-- UPDATED LABEL TEXT -->
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
                 <input
                     type="date"
                     id="return-date-input"
@@ -169,7 +170,7 @@
             const date = DOM.returnDateInput.value;
             
             if (!name || !email || !date) {
-                displayError("Please enter your Full Name, Email, and the Expected Return/Reservation End Date.");
+                displayError("Please enter your Full Name, Email, and select a date.");
                 return null;
             }
             return { name, email, date }; // Renamed returnDate to date for generic use
@@ -256,8 +257,9 @@
         
         /**
          * Updates the device status for checkout, check-in, reservation, or cancellation.
+         * Note: 'reserve_available' changes status to 'reserved'. 'reserve_queue' only sets reservation fields.
          * @param {string} deviceId 
-         * @param {'checked_out'|'available'|'reserved'|'cancel_reservation'|'checkout_reserved'} action 
+         * @param {'checked_out'|'check_in'|'reserve_available'|'reserve_queue'|'cancel_reservation'|'checkout_reserved'} action 
          * @param {object | null} deviceForCheckout If action is 'checkout_reserved', this should be the full device object.
          */
         async function updateDeviceStatus(deviceId, action, deviceForCheckout = null) {
@@ -266,61 +268,83 @@
             }
             if (!devicesCollectionRef) return displayError("Database not initialized.");
             
-            // Re-get userInfo only if needed for standard checkout/reserve
-            const needsFormInfo = (action === 'checked_out' || action === 'reserve');
+            // Re-get userInfo only if needed for standard checkout/reservation
+            const needsFormInfo = (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue');
             const userInfo = needsFormInfo ? getUserInfo() : null;
             if (needsFormInfo && !userInfo) return; // Error handled by getUserInfo
 
             let updateData = {};
             let newStatus = '';
 
+            // Common reservation fields payload
+            const reservationPayload = {
+                reservedBy: userId,
+                reservedByUserName: userInfo?.name,
+                reservedByUserEmail: userInfo?.email,
+                reservationEndDate: userInfo?.date,
+            };
+            
+            // Common clear payload for both checkout and reservation fields
+            const clearPayload = {
+                checkedOutBy: null,
+                checkedOutByUserName: null,
+                checkedOutByUserEmail: null,
+                expectedReturnDate: null,
+                checkedOutAt: null,
+                reservedBy: null,
+                reservedByUserName: null,
+                reservedByUserEmail: null,
+                reservationEndDate: null,
+            };
+
+
             switch (action) {
                 case 'checked_out':
                     newStatus = 'checked_out';
                     updateData = {
                         status: newStatus,
+                        ...clearPayload, // Clear all fields first
                         checkedOutBy: userId,
                         checkedOutByUserName: userInfo.name,
                         checkedOutByUserEmail: userInfo.email,
                         expectedReturnDate: userInfo.date,
                         checkedOutAt: new Date().toISOString(),
-                        // Clear reservation fields if they exist
-                        reservedBy: null,
-                        reservedByUserName: null,
-                        reservedByUserEmail: null,
-                        reservationEndDate: null,
                     };
                     break;
 
-                case 'available': // Fallback or Admin override (currently unused)
-                case 'check_in': // Explicit Check-in
-                case 'cancel_reservation': // Explicit Cancel Reservation
+                case 'check_in':
                     newStatus = 'available';
                     updateData = {
                         status: newStatus,
-                        checkedOutBy: null,
-                        checkedOutByUserName: null,
-                        checkedOutByUserEmail: null,
-                        expectedReturnDate: null,
-                        checkedOutAt: null,
-                        reservedBy: null,
-                        reservedByUserName: null,
-                        reservedByUserEmail: null,
-                        reservationEndDate: null,
+                        ...clearPayload,
                     };
                     break;
                 
-                case 'reserve':
+                case 'reserve_available':
+                    // Reserves an available item, changing its status to 'reserved'
                     newStatus = 'reserved';
                     updateData = {
                         status: newStatus,
-                        // Clear checkout fields if they exist (shouldn't if available)
-                        checkedOutBy: null,
-                        // Set reservation fields
-                        reservedBy: userId,
-                        reservedByUserName: userInfo.name,
-                        reservedByUserEmail: userInfo.email,
-                        reservationEndDate: userInfo.date,
+                        ...clearPayload,
+                        ...reservationPayload,
+                    };
+                    break;
+
+                case 'reserve_queue':
+                    // Reserves a checked-out item. Status remains 'checked_out' (by omission).
+                    newStatus = 'checked_out (reservation queued)';
+                    updateData = {
+                        ...reservationPayload, // Only update reservation fields
+                        // NOTE: 'status' is omitted, keeping it as 'checked_out'
+                    };
+                    break;
+
+                case 'cancel_reservation': 
+                    // This action only appears when status is 'reserved' (reserved when available)
+                    newStatus = 'available';
+                    updateData = {
+                        status: newStatus,
+                        ...clearPayload,
                     };
                     break;
 
@@ -334,16 +358,12 @@
                     // Use the stored reservation data for checkout
                     updateData = {
                         status: newStatus,
-                        checkedOutBy: deviceForCheckout.reservedBy, // Should be current userId
+                        ...clearPayload, // Clear all fields
+                        checkedOutBy: deviceForCheckout.reservedBy,
                         checkedOutByUserName: deviceForCheckout.reservedByUserName,
                         checkedOutByUserEmail: deviceForCheckout.reservedByUserEmail,
-                        expectedReturnDate: deviceForCheckout.reservationEndDate, // Use reservation end date as expected return date
+                        expectedReturnDate: deviceForCheckout.reservationEndDate,
                         checkedOutAt: new Date().toISOString(),
-                        // Clear reservation fields
-                        reservedBy: null,
-                        reservedByUserName: null,
-                        reservedByUserEmail: null,
-                        reservationEndDate: null,
                     };
                     break;
 
@@ -370,7 +390,11 @@
             
             const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
             const isReservedByMe = isReserved && device.reservedBy === userId;
-
+            
+            // NEW: Check if there is a pending reservation (regardless of primary status)
+            const hasPendingReservation = !!device.reservedBy; 
+            const hasPendingReservationByMe = hasPendingReservation && device.reservedBy === userId;
+            
             // Check for overdue checkout or expired reservation (past current date)
             const today = new Date().toISOString().split('T')[0];
             let isPastDue = false;
@@ -382,12 +406,20 @@
             } else if (isReserved) {
                 isPastDue = device.reservationEndDate && (device.reservationEndDate < today);
                 displayDate = device.reservationEndDate;
+            } else if (isCheckedOut && hasPendingReservation) {
+                 // Even if checked out, check the reservation end date for relevance
+                displayDate = device.expectedReturnDate; 
             }
 
             // Determine status display
             let statusColor = 'bg-success';
             let statusText = 'Available';
             let details = '';
+            
+            // If device is checked out AND has a reservation, show the reservation status in details
+            const reservationDetails = hasPendingReservation 
+                ? `<p class="mt-2 text-info text-xs"><span class="font-bold">Queue:</span> Reserved by ${hasPendingReservationByMe ? 'You' : device.reservedByUserName} until ${device.reservationEndDate}.</p>` 
+                : '';
 
             if (isReserved) {
                 statusColor = isPastDue ? 'bg-warning' : 'bg-info';
@@ -403,6 +435,7 @@
                     <p><span class="font-semibold">${isCheckedOutByMe ? 'Checked Out By You' : 'Checked Out By:'}</span> ${device.checkedOutByUserName || 'Unknown'}</p>
                     ${device.checkedOutByUserEmail ? `<p><span class="font-semibold">Email:</span> ${device.checkedOutByUserEmail}</p>` : ''}
                     <p><span class="font-semibold">Return Date:</span> ${displayDate}</p>
+                    ${reservationDetails}
                 `;
             }
             
@@ -415,7 +448,8 @@
                     <button data-action="checked_out" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
                         Check Out
                     </button>
-                    <button data-action="reserve" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600 ml-2">
+                    <!-- Action: reserve_available -->
+                    <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600 ml-2">
                         Reserve
                     </button>
                 `);
@@ -427,23 +461,24 @@
                             Check In
                         </button>
                     `);
-                } else if (!isReserved) { 
-                    // Checked Out By Others AND not currently reserved: Show Reserve for Later
+                } else if (!hasPendingReservation) { 
+                    // FIX: Checked Out By Others AND no reservation is queued: Show Reserve for Later
                     buttonsHtml.push(`
-                        <button data-action="reserve" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
+                        <!-- Action: reserve_queue -->
+                        <button data-action="reserve_queue" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
                             Reserve for Later
                         </button>
                     `);
                 } else {
-                     // Checked Out by Others AND Reserved by Someone (not me): Disabled button
+                     // Checked Out by Others AND Reservation is Queued: Disabled button
                     buttonsHtml.push(`
                         <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
-                            Unavailable
+                            Reservation Queued (${hasPendingReservationByMe ? 'By You' : 'By Other'})
                         </button>
                     `);
                 }
             } else if (isReserved) {
-                // Device is RESERVED (by me or someone else)
+                // Device is RESERVED (by me or someone else, reserved when available)
                 if (isReservedByMe) {
                     // Reserved By Me: Show Check Out Now and Cancel Reservation
                     buttonsHtml.push(`
@@ -536,8 +571,8 @@
                         }
 
                         updateDeviceStatus(device.id, action);
-                    } else if (action === 'checked_out' || action === 'reserve') {
-                        // Standard checkout/reserve uses data from the top form
+                    } else if (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue') {
+                        // All these actions require form data
                         updateDeviceStatus(device.id, action);
                     } else if (action === 'checkout_reserved') {
                          // 1-Click reserved checkout uses data stored in the reservation fields (device object)
@@ -682,5 +717,4 @@
     </script>
 </body>
 </html>
-
 
