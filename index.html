@@ -552,7 +552,7 @@
 
                         if (!currentUserName || currentUserName !== requiredUserName ||
                             !currentUserEmail || currentUserEmail !== requiredUserEmail) {
-                             // NON-REVEALING ERROR MESSAGE
+                             // Non-revealing error message for Check In
                              displayError(`To check in "${device.name}", please ensure your full Name and Email match the details used for checkout.`);
                              return;
                         }
@@ -567,18 +567,32 @@
 
                         if (!currentUserName || currentUserName !== requiredUserName || 
                             !currentUserEmail || currentUserEmail !== requiredUserEmail) {
-                             // NON-REVEALING ERROR MESSAGE
+                             // Non-revealing error message for Cancel Reservation
                              displayError(`To cancel the reservation for "${device.name}", please confirm your identity by entering the exact Name and Email you used to reserve it.`);
                              return;
                         }
 
                         updateDeviceStatus(device.id, action);
+                    } else if (action === 'checkout_reserved') {
+                        // NEW Security Check: Require name and email verification for Check Out Now
+                        const currentUserName = DOM.nameInput.value.trim();
+                        const currentUserEmail = DOM.emailInput.value.trim();
+                        
+                        const requiredUserName = device.reservedByUserName;
+                        const requiredUserEmail = device.reservedByUserEmail;
+
+                        if (!currentUserName || currentUserName !== requiredUserName || 
+                            !currentUserEmail || currentUserEmail !== requiredUserEmail) {
+                             // Non-revealing error message for Check Out Now
+                             displayError(`To check out "${device.name}" now, please confirm your identity by entering the exact Name and Email you used to reserve it.`);
+                             return;
+                        }
+                        
+                         // If confirmation passes, proceed with 1-Click reserved checkout
+                         updateDeviceStatus(device.id, action, device);
                     } else if (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue') {
                         // All these actions require form data
                         updateDeviceStatus(device.id, action);
-                    } else if (action === 'checkout_reserved') {
-                         // 1-Click reserved checkout uses data stored in the reservation fields (device object)
-                         updateDeviceStatus(device.id, action, device);
                     }
                 });
             });
@@ -719,4 +733,3 @@
     </script>
 </body>
 </html>
-
