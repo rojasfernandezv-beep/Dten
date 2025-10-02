@@ -414,25 +414,51 @@
                         Reserve
                     </button>
                 `);
-            } else if (isCheckedOutByMe) {
-                // Checked Out By Me: Show Check In
-                buttonsHtml.push(`
-                    <button data-action="check_in" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600">
-                        Check In
-                    </button>
-                `);
-            } else if (isReservedByMe) {
-                // Reserved By Me: Show Check Out Now and Cancel Reservation
-                buttonsHtml.push(`
-                    <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
-                        Check Out Now
-                    </button>
-                    <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
-                        Cancel Reservation
-                    </button>
-                `);
+            } else if (isCheckedOut) {
+                if (isCheckedOutByMe) {
+                    // Checked Out By Me: Show Check In
+                    buttonsHtml.push(`
+                        <button data-action="check_in" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600">
+                            Check In
+                        </button>
+                    `);
+                } else if (!isReserved) { 
+                    // Checked Out By Others AND not currently reserved: Show Reserve for Later
+                    buttonsHtml.push(`
+                        <button data-action="reserve" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
+                            Reserve for Later
+                        </button>
+                    `);
+                } else {
+                     // Checked Out by Others AND Reserved by Someone (not me): Disabled button
+                    buttonsHtml.push(`
+                        <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
+                            Unavailable
+                        </button>
+                    `);
+                }
+            } else if (isReserved) {
+                // Device is RESERVED (by me or someone else)
+                if (isReservedByMe) {
+                    // Reserved By Me: Show Check Out Now and Cancel Reservation
+                    buttonsHtml.push(`
+                        <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
+                            Check Out Now
+                        </button>
+                        <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
+                            Cancel Reservation
+                        </button>
+                    `);
+                } else {
+                    // Reserved by Others: Show Disabled button
+                    buttonsHtml.push(`
+                        <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
+                            Reserved by Other
+                        </button>
+                    `);
+                }
             } else {
-                // Checked Out by Others OR Reserved by Others: Disabled buttons
+                // Fallback: Disabled buttons
                 buttonsHtml.push(`
                     <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
                         Unavailable
@@ -491,7 +517,7 @@
                         }
                         updateDeviceStatus(device.id, action);
                     } else if (action === 'cancel_reservation') {
-                        // NEW SECURITY CHECK: Require name and email verification
+                        // Security Check: Require name and email verification
                         const currentUserName = DOM.nameInput.value.trim();
                         const currentUserEmail = DOM.emailInput.value.trim();
                         
