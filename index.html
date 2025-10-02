@@ -83,7 +83,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         // NOTE: Added signInWithCustomToken to imports
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- Initialization Constants (Relying ONLY on Canvas Globals) ---
@@ -306,12 +306,22 @@
                 // Only show this error if the environment config was truly empty
                 return displayError("Firebase configuration is missing. Cannot start application.");
             }
+            
+            // Log the received configuration for debugging (do not log the full key/token)
+            console.log("Using Firebase Project ID:", firebaseConfig.projectId);
 
             try {
-                // setLogLevel('Debug'); // Uncomment this for console debugging
+                // Enable debug logging for deeper diagnostics
+                setLogLevel('debug'); // For Firestore
+                // For Auth (not directly available via import, but console output should improve)
+                
                 const app = initializeApp(firebaseConfig);
+                
                 db = getFirestore(app);
                 auth = getAuth(app);
+                
+                // IMPORTANT: Set persistence to session to avoid constant re-authenticating
+                await setPersistence(auth, browserSessionPersistence);
                 
                 // 1. Setup Firestore Collection and Listener (Independent of Auth State)
                 const collectionPath = `artifacts/${appId}/public/data/devices`;
@@ -323,12 +333,13 @@
                     try {
                         if (initialAuthToken) {
                             await signInWithCustomToken(auth, initialAuthToken);
+                            console.log("Authentication attempted with custom token.");
                         } else {
                             await signInAnonymously(auth);
+                            console.log("Authentication attempted anonymously.");
                         }
                     } catch(e) {
-                        console.error("Authentication failed:", e);
-                        // The API Key error should be resolved now, but we keep this handler.
+                        console.error("Authentication failed during sign-in attempt (likely API Key issue):", e);
                     }
                 };
                 authenticateUser();
@@ -337,11 +348,10 @@
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
-                        // For debugging purposes only
-                        console.log("Authenticated with user ID:", userId); 
+                        console.log("Auth State Changed: User is authenticated with ID:", userId); 
                     } else {
                         userId = null;
-                        // This handles cases where auth fails (like the API Key error, which should be fixed now)
+                        console.log("Auth State Changed: User is not authenticated.");
                     }
                     clearError();
                 });
@@ -349,7 +359,7 @@
             } catch (e) {
                 const spinner = document.getElementById('loading-spinner');
                 if(spinner) spinner.remove();
-                displayError(`Application Error: Cannot initialize database. Details: ${e.message}`);
+                displayError(`Application Error: Cannot initialize database or Firebase services. Details: ${e.message}`);
             }
         }
         
@@ -368,8 +378,7 @@
                 renderDeviceList(devices);
             }, (err) => {
                 // This is the error handler for "Missing or insufficient permissions"
-                // It should disappear once authentication succeeds.
-                displayError(`Real-time Listener Error: ${err.message}`);
+                displayError(`Real-time Listener Error: ${err.message}. If the list is empty, ensure your Firebase Security Rules allow 'read' access for authenticated users.`);
             });
         }
 
