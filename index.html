@@ -30,8 +30,7 @@
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8">
     <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
         <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">Device Checkout Hub</h1>
-        <!-- Removed the visible user-info/connection status area (id="user-info") -->
-
+        
         <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 rounded-lg" role="alert"></div>
         
         <!-- User Information Form (Required for Checkout) -->
@@ -56,7 +55,6 @@
                 >
             </div>
             <div>
-                <!-- Label changed to "Select a date" per request -->
                 <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
                 <input
                     type="date"
@@ -82,24 +80,38 @@
     <!-- Firebase SDK Imports and Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        // NOTE: Added signInWithCustomToken to imports
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+        // --- HARDCODED FALLBACK CONFIGURATION (Using user's provided details) ---
+        // This is a temporary measure to bypass the environment failing to inject __firebase_config.
+        const FALLBACK_FIREBASE_CONFIG = {
+            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM", // User's Web API Key
+            authDomain: "device-checkout-system.firebaseapp.com",
+            projectId: "device-checkout-system", // User's Project ID
+            storageBucket: "device-checkout-system.appspot.com",
+            messagingSenderId: "552885197205", // User's Project Number
+            appId: "1:552885197205:web:fakedid", // Placeholder
+        };
+        // ------------------------------------------------------------------------
+
         // --- Initialization Constants (Relying ONLY on Canvas Globals) ---
-        
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
         
-        let firebaseConfig;
+        let firebaseConfig = {};
         try {
-            // Reverting to the configuration logic that yielded the "API key not valid" error,
-            // as this implies the config object itself was at least present.
+            // Attempt to use the environment variable first
             firebaseConfig = JSON.parse(__firebase_config);
+            // If the environment variable was provided but resulted in an empty/invalid object, use the fallback
+            if (!Object.keys(firebaseConfig).length) {
+                 firebaseConfig = FALLBACK_FIREBASE_CONFIG;
+                 console.warn("Environment provided empty config. Falling back to hardcoded configuration.");
+            }
         } catch (e) {
-            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Environment issue suspected.", e);
-            // Use an empty object as a safe, non-fatal fallback.
-            firebaseConfig = {}; 
+            // If parsing failed (e.g., __firebase_config was undefined or not a valid JSON string), use the fallback
+            firebaseConfig = FALLBACK_FIREBASE_CONFIG;
+            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Using hardcoded fallback.", e);
         }
         
         const DOM = {
@@ -113,7 +125,7 @@
 
         let db, auth, userId = null;
         let devicesCollectionRef = null;
-        let currentDevices = []; // Store the current state of devices for display logic
+        let currentDevices = [];
         
         // --- Utility Functions ---
 
@@ -143,7 +155,6 @@
         // --- Firestore Operations ---
         
         async function updateDeviceStatus(deviceId, status) {
-            // Added explicit userId check for checkout
             if (status === 'checked_out' && !userId) {
                 return displayError("Authentication is pending. Please wait a moment before checking out a device.");
             }
@@ -154,19 +165,18 @@
             
             if (isCheckingOut) {
                 const userInfo = getUserInfo();
-                if (!userInfo) return; // Error handled by getUserInfo
+                if (!userInfo) return;
                 
                 updateData.checkedOutBy = userId;
                 updateData.checkedOutByUserName = userInfo.name;
-                updateData.expectedReturnDate = userInfo.returnDate; // New field
+                updateData.expectedReturnDate = userInfo.returnDate;
                 updateData.checkedOutAt = new Date().toISOString();
                 
             } else {
-                // Check In logic: Clear all checkout fields
                 updateData.checkedOutBy = null;
                 updateData.checkedOutByUserName = null;
                 updateData.checkedOutByUserEmail = null;
-                updateData.expectedReturnDate = null; // Clear new field
+                updateData.expectedReturnDate = null;
                 updateData.checkedOutAt = null;
             }
 
@@ -179,7 +189,7 @@
             }
         }
 
-        // --- Rendering Logic ---
+        // --- Rendering Logic (Unchanged) ---
 
         function createDeviceCard(device) {
             const isCheckedOut = device.status === 'checked_out';
@@ -191,8 +201,6 @@
             
             const buttonText = isCheckedOutByMe ? 'Check In' : 'Check Out';
             const buttonClass = isCheckedOutByMe ? 'bg-danger hover:bg-red-600' : 'bg-primary hover:bg-primary-600';
-            // Disable button if it's checked out by someone else AND we are authenticated
-            // If userId is null (pending auth), we allow the button to remain active until updateDoc fails inside updateDeviceStatus
             const buttonDisabled = isCheckedOut && !isCheckedOutByMe && userId !== null; 
 
             const card = document.createElement('div');
@@ -225,19 +233,14 @@
 
             card.innerHTML = `<div class="flex items-start mb-3 sm:mb-0">${statusIndicator}</div> ${buttonSection}`;
 
-
-            // Attach click handler
             const button = card.querySelector(`#btn-${device.id}`);
             button.addEventListener('click', () => {
-                
-                // If the user tries to interact while authentication is pending:
                 if (userId === null) {
                     displayError("Authentication is currently pending. Please wait a moment for the connection to finalize.");
-                    if (isCheckedOutByMe) return; // Prevent check-in until we know who the user is.
+                    if (isCheckedOutByMe) return; 
                 }
 
                 if (isCheckedOutByMe) {
-                    // Case 1: Check In (NAME CONFIRMATION LOGIC)
                     const currentUserName = DOM.nameInput.value.trim();
                     const requiredUserName = device.checkedOutByUserName;
 
@@ -253,10 +256,8 @@
                     }
 
                 } else if (!isCheckedOut) {
-                    // Case 2: Check Out (Device is available)
                     updateDeviceStatus(device.id, 'checked_out');
                 } else {
-                    // Case 3: Attempting to Check Out a device that is already checked out by someone else
                     displayError(`Device "${device.name}" is not available for checkout. It is currently checked out by ${device.checkedOutByUserName || 'another user'}.`);
                 }
             });
@@ -278,7 +279,6 @@
                 return;
             }
             
-            // Sort: Available first, then Checked Out, then Overdue
             devices.sort((a, b) => {
                 const statusA = a.status;
                 const statusB = b.status;
@@ -286,14 +286,13 @@
                 if (statusA === 'available' && statusB !== 'available') return -1;
                 if (statusB === 'available' && statusA !== 'available') return 1;
 
-                // Secondary sort: Overdue devices should be near the top
                 const isADue = a.expectedReturnDate && (new Date(a.expectedReturnDate) < new Date());
                 const isBDue = b.expectedReturnDate && (new Date(b.expectedReturnDate) < new Date());
 
                 if (isADue && !isBDue) return -1;
                 if (isBDue && !isADue) return 1;
 
-                return 0; // Maintain existing order otherwise
+                return 0;
             }); 
 
             devices.forEach(device => DOM.list.appendChild(createDeviceCard(device)));
@@ -303,29 +302,32 @@
         // --- Main Initialization and Authentication ---
 
         async function initFirebase() {
-            // REMOVED: if (!Object.keys(firebaseConfig).length) check
+            // This check now only triggers if both the environment variable AND the fallback are empty (which shouldn't happen)
+            if (!Object.keys(firebaseConfig).length) {
+                const spinner = document.getElementById('loading-spinner');
+                if(spinner) spinner.remove();
+                return displayError("CRITICAL: Firebase configuration is missing, even the fallback failed. Application cannot start.");
+            }
             
-            // Log the received configuration for debugging (do not log the full key/token)
-            console.log("Using Firebase Project ID:", firebaseConfig.projectId);
+            console.log("Firebase Initialization: Using Project ID:", firebaseConfig.projectId);
 
             try {
-                // Enable debug logging for deeper diagnostics
-                setLogLevel('debug'); // For Firestore
+                setLogLevel('debug');
                 
                 const app = initializeApp(firebaseConfig);
                 
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                // IMPORTANT: Set persistence to session to avoid constant re-authenticating
                 await setPersistence(auth, browserSessionPersistence);
                 
-                // 1. Setup Firestore Collection and Listener (Independent of Auth State)
+                // 1. Setup Firestore Collection and Listener
+                // Note: The collection path is dynamic based on your Canvas App ID
                 const collectionPath = `artifacts/${appId}/public/data/devices`;
                 devicesCollectionRef = collection(db, collectionPath);
                 startRealtimeListener();
                 
-                // 2. Perform Authentication in the background
+                // 2. Perform Authentication
                 const authenticateUser = async () => {
                     try {
                         if (initialAuthToken) {
@@ -336,12 +338,12 @@
                             console.log("Authentication attempted anonymously.");
                         }
                     } catch(e) {
-                        console.error("Authentication failed during sign-in attempt (likely API Key issue):", e);
+                        console.error("Authentication failed:", e);
                     }
                 };
                 authenticateUser();
 
-                // 3. Set up Auth State Observer - only used to set userId for interaction logic
+                // 3. Set up Auth State Observer
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
@@ -374,7 +376,6 @@
                 currentDevices = devices; 
                 renderDeviceList(devices);
             }, (err) => {
-                // This is the error handler for "Missing or insufficient permissions"
                 displayError(`Real-time Listener Error: ${err.message}. If the list is empty, ensure your Firebase Security Rules allow 'read' access for authenticated users.`);
             });
         }
