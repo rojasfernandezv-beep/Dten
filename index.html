@@ -156,7 +156,11 @@
         // --- Firestore Operations ---
         
         async function updateDeviceStatus(deviceId, status) {
-            if (!devicesCollectionRef) return displayError("Database not initialized or failed to authenticate.");
+            // Added explicit userId check for checkout
+            if (status === 'checked_out' && !userId) {
+                return displayError("Authentication is pending. Please wait a moment before checking out a device.");
+            }
+            if (!devicesCollectionRef) return displayError("Database not initialized.");
             
             const isCheckingOut = status === 'checked_out';
             let updateData = { status: status };
@@ -220,7 +224,7 @@
                     </span>
                     ${isCheckedOut ? `
                         <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
-                            <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'N/A'}</p>
+                            <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'Another User'}</p>
                             <!-- Email and Return Date hidden for privacy -->
                         </div>
                     ` : ''}
@@ -243,8 +247,13 @@
             // Attach click handler
             const button = card.querySelector(`#btn-${device.id}`);
             button.addEventListener('click', () => {
-                // Now only checks for a connection/initialization error, not based on visible UI status
-                if (!userId) return displayError("Authentication is pending. Please wait a moment.");
+                // The check for userId is now inside updateDeviceStatus, but we keep a local check for non-blocking errors.
+                if (!userId) {
+                    displayError("Authentication is pending. Please wait a moment.");
+                    // Allow check-out to proceed if the user insists, but updateDeviceStatus will block it.
+                    // We only prevent check-in if userId is not available.
+                    if (isCheckedOutByMe) return; 
+                }
 
                 if (isCheckedOutByMe) {
                     // Case 1: Check In (NAME CONFIRMATION LOGIC)
@@ -327,6 +336,16 @@
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
+                // --- FIX: Start data listener immediately, decoupled from Auth State ---
+                // MANDATORY PUBLIC Firestore path for shared resources
+                const collectionPath = `artifacts/${appId}/public/data/devices`;
+                devicesCollectionRef = collection(db, collectionPath);
+                
+                // Start real-time data listener immediately after setting the collection path.
+                startRealtimeListener();
+                // ----------------------------------------------------------------------
+
+
                 // Authentication Logic: Use custom token if available, otherwise sign in anonymously.
                 const authenticateUser = async () => {
                     try {
@@ -341,30 +360,17 @@
                 };
                 authenticateUser();
 
-                // Set up Auth State Observer
+                // Set up Auth State Observer - only used to set userId for interaction logic
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
                         // For debugging purposes only
                         console.log("Authenticated with user ID:", userId); 
-                        
-                        // MANDATORY PUBLIC Firestore path for shared resources
-                        const collectionPath = `artifacts/${appId}/public/data/devices`;
-                        devicesCollectionRef = collection(db, collectionPath);
-                        
-                        // Removed DOM.info update
-                        clearError();
-                        
-                        // Start real-time data listener
-                        startRealtimeListener();
                     } else {
                         userId = null;
-                        // Removed DOM.info update
-                        // If auth fails, stop spinner and show empty state message
-                        const spinner = document.getElementById('loading-spinner');
-                        if(spinner) spinner.remove();
-                        renderDeviceList([]);
                     }
+                    // Clear errors after authentication resolves
+                    clearError();
                 });
 
             } catch (e) {
