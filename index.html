@@ -83,35 +83,35 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- HARDCODED FALLBACK CONFIGURATION (Using user's provided details) ---
-        // This is a temporary measure to bypass the environment failing to inject __firebase_config.
-        const FALLBACK_FIREBASE_CONFIG = {
-            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM", // User's Web API Key
-            authDomain: "device-checkout-system.firebaseapp.com",
-            projectId: "device-checkout-system", // User's Project ID
-            storageBucket: "device-checkout-system.appspot.com",
-            messagingSenderId: "552885197205", // User's Project Number
-            appId: "1:552885197205:web:fakedid", // Placeholder
+        // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
+        // This acts as a robust fallback for the two absolute required fields.
+        const ESSENTIAL_FIREBASE_DEFAULTS = {
+            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM", 
+            projectId: "device-checkout-system",
         };
-        // ------------------------------------------------------------------------
+        // -------------------------------------------------------------------------
 
-        // --- Initialization Constants (Relying ONLY on Canvas Globals) ---
+        // --- Initialization Constants ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
         
         let firebaseConfig = {};
+
+        // 1. Attempt to parse environment config
         try {
-            // Attempt to use the environment variable first
-            firebaseConfig = JSON.parse(__firebase_config);
-            // If the environment variable was provided but resulted in an empty/invalid object, use the fallback
-            if (!Object.keys(firebaseConfig).length) {
-                 firebaseConfig = FALLBACK_FIREBASE_CONFIG;
-                 console.warn("Environment provided empty config. Falling back to hardcoded configuration.");
-            }
+            firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
         } catch (e) {
-            // If parsing failed (e.g., __firebase_config was undefined or not a valid JSON string), use the fallback
-            firebaseConfig = FALLBACK_FIREBASE_CONFIG;
-            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Using hardcoded fallback.", e);
+            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Using defaults.", e);
+        }
+
+        // 2. Guarantee the required fields using the fallback if missing
+        if (!firebaseConfig.apiKey) {
+            firebaseConfig.apiKey = ESSENTIAL_FIREBASE_DEFAULTS.apiKey;
+            console.warn("API Key was missing from environment config. Using hardcoded fallback.");
+        }
+        if (!firebaseConfig.projectId) {
+            firebaseConfig.projectId = ESSENTIAL_FIREBASE_DEFAULTS.projectId;
+            console.warn("Project ID was missing from environment config. Using hardcoded fallback.");
         }
         
         const DOM = {
@@ -302,11 +302,11 @@
         // --- Main Initialization and Authentication ---
 
         async function initFirebase() {
-            // This check now only triggers if both the environment variable AND the fallback are empty (which shouldn't happen)
-            if (!Object.keys(firebaseConfig).length) {
+            // Check after robust merging
+            if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
                 const spinner = document.getElementById('loading-spinner');
                 if(spinner) spinner.remove();
-                return displayError("CRITICAL: Firebase configuration is missing, even the fallback failed. Application cannot start.");
+                return displayError("CRITICAL: Final configuration is still missing Project ID or API Key. Cannot proceed.");
             }
             
             console.log("Firebase Initialization: Using Project ID:", firebaseConfig.projectId);
@@ -322,7 +322,6 @@
                 await setPersistence(auth, browserSessionPersistence);
                 
                 // 1. Setup Firestore Collection and Listener
-                // Note: The collection path is dynamic based on your Canvas App ID
                 const collectionPath = `artifacts/${appId}/public/data/devices`;
                 devicesCollectionRef = collection(db, collectionPath);
                 startRealtimeListener();
@@ -358,6 +357,7 @@
             } catch (e) {
                 const spinner = document.getElementById('loading-spinner');
                 if(spinner) spinner.remove();
+                // This catch should now only fire for network/permissions issues, not configuration
                 displayError(`Application Error: Cannot initialize database or Firebase services. Details: ${e.message}`);
             }
         }
