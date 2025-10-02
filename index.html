@@ -351,16 +351,17 @@
                     const statusSnap = await transaction.get(statusRef);
                     const statusData = statusSnap.data();
                     
-                    // 2. CHECK: If the device is not available, throw a custom error to abort
+                    // 2. CHECK: If the device is not available, throw a custom error object to abort
                     // This is the race condition guard!
                     if (!statusSnap.exists() || !statusData.isAvailable) {
-                        // Log a detailed error if the block condition is met
                         console.error("TRANSACTION ABORTED: Device is already checked out.", statusData); 
-                        throw "ALREADY_CHECKED_OUT"; 
+                        // Throw a custom error object for reliable catching
+                        const checkoutError = new Error("The device is currently checked out.");
+                        checkoutError.name = "DeviceUnavailableError";
+                        throw checkoutError; 
                     }
 
                     // 3. Setup: Get a unique ID for the new history log document
-                    // Must be created here or use a client-generated ID
                     const newHistoryRef = doc(historyCollectionRef); 
                     const historyDocId = newHistoryRef.id;
 
@@ -396,13 +397,15 @@
                 clearForm();
 
             } catch (error) {
-                // Handle the transaction's specific error or a general Firestore error
-                if (error === "ALREADY_CHECKED_OUT") {
+                // Handle the custom error thrown during the transaction
+                if (error.name === "DeviceUnavailableError") {
                     showMessage("Error: The device is currently checked out by another user. Please check the status above.", 'error');
                 } else if (error.code === 'permission-denied') {
-                    showMessage("Error: Permission Denied. Please ensure your Firestore Security Rules are published correctly.", 'error');
+                    // This is the error that often occurs if security rules fail the transaction
+                    showMessage("Error: Permission Denied or Transaction Failed. Check your Firebase Security Rules.", 'error');
+                    console.error("Firestore Error (Permission or Transaction Failure):", error);
                 } else {
-                    console.error("Check-out failed:", error);
+                    console.error("Check-out failed (General Error):", error);
                     showMessage(`Check-out failed: ${error.message || error}. Please try again.`, 'error');
                 }
             } finally {
