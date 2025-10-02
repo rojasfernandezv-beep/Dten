@@ -245,9 +245,9 @@
             if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
 
             // Define the devices to be added. 
+            // ONLY DTEN Board is included as per user request.
             const devicesToSeed = [
-                { id: "DTEN-Board", name: "DTEN Board", status: "available" }, 
-                { id: "Poly-Studio", name: "Poly Studio P15", status: "available" }
+                { id: "DTEN-Board", name: "DTEN Board", status: "available" }
             ];
             
             if (devicesToSeed.length === 0) {
@@ -653,7 +653,7 @@
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.innerHTML = `
                     <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the **Seed** button to add the devices. (Two devices are now included in the seed array.)</p>
+                    <p class="mb-4">Click the **Seed** button to add the devices. (Only the DTEN Board is included in the seed array now.)</p>
                     <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
                 `;
                 DOM.list.appendChild(message);
