@@ -34,8 +34,10 @@
         
         <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 bg-opacity-70 rounded-lg" role="alert"></div>
         
-        <!-- User Information Form (Required for Checkout/Reservation) -->
-        <h2 class="text-2xl font-semibold text-gray-700 mb-3">Your Information for Checkout/Reservation</h2>
+        <!-- User Information Form (Required for Checkout/Reservation/Confirmation) -->
+        <h2 class="text-2xl font-semibold text-gray-700 mb-3">Your Information for Action & Confirmation</h2>
+        <p class="text-sm text-gray-600 mb-4">Please enter your details here for **new** checkouts/reservations, or to **confirm** your identity for check-ins and cancellations.</p>
+
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 border border-gray-200 rounded-xl bg-indigo-50/50">
             <div>
                 <label for="user-name-input" class="block text-sm font-medium text-gray-700">Full Name</label>
@@ -477,20 +479,37 @@
 
                     if (action === 'check_in') {
                         const currentUserName = DOM.nameInput.value.trim();
+                        const currentUserEmail = DOM.emailInput.value.trim();
+                        
                         const requiredUserName = device.checkedOutByUserName;
+                        const requiredUserEmail = device.checkedOutByUserEmail;
 
-                        if (!currentUserName || currentUserName !== requiredUserName) {
-                             displayError(`To check in "${device.name}", please ensure your full name matches the checkout name ("${requiredUserName}") in the input field above.`);
+                        if (!currentUserName || currentUserName !== requiredUserName ||
+                            !currentUserEmail || currentUserEmail !== requiredUserEmail) {
+                             displayError(`To check in "${device.name}", please ensure your full Name ("${requiredUserName}") and Email ("${requiredUserEmail}") match the details used for checkout.`);
                              return;
                         }
                         updateDeviceStatus(device.id, action);
                     } else if (action === 'cancel_reservation') {
+                        // NEW SECURITY CHECK: Require name and email verification
+                        const currentUserName = DOM.nameInput.value.trim();
+                        const currentUserEmail = DOM.emailInput.value.trim();
+                        
+                        const requiredUserName = device.reservedByUserName;
+                        const requiredUserEmail = device.reservedByUserEmail;
+
+                        if (!currentUserName || currentUserName !== requiredUserName || 
+                            !currentUserEmail || currentUserEmail !== requiredUserEmail) {
+                             displayError(`To cancel the reservation for "${device.name}", please confirm your identity by entering the exact Name ("${requiredUserName}") and Email ("${requiredUserEmail}") you used to reserve it.`);
+                             return;
+                        }
+
                         updateDeviceStatus(device.id, action);
                     } else if (action === 'checked_out' || action === 'reserve') {
                         // Standard checkout/reserve uses data from the top form
                         updateDeviceStatus(device.id, action);
                     } else if (action === 'checkout_reserved') {
-                         // New action: Use data stored in the reservation fields (device object)
+                         // 1-Click reserved checkout uses data stored in the reservation fields (device object)
                          updateDeviceStatus(device.id, action, device);
                     }
                 });
