@@ -78,7 +78,7 @@
                 <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
                     Seed Initial Device Data
                 </button>
-                <p class="text-sm text-gray-500 mt-2">Click this to add two devices (**DTEN Board** and **Poly Studio P15**) to the system.</p>
+                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system. (Currently, no devices are defined in the seed data.)</p>
             </div>
             <div>
                 <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
@@ -220,19 +220,24 @@
         }
 
         /**
-         * Adds initial devices (DTEN and Poly Studio) to the Firestore collection.
+         * Adds initial devices (if defined) to the Firestore collection.
          */
         async function seedInitialData() {
             if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
 
+            // Define the devices to be added. This array is now empty as requested by the user.
+            const devicesToSeed = [
+                // { id: "DTEN-Board", name: "DTEN Board", status: "available" }, 
+                // { id: "Poly-Studio", name: "Poly Studio P15", status: "available" }
+            ];
+            
+            if (devicesToSeed.length === 0) {
+                 return displayError("No devices are defined in the seed data array to be added.");
+            }
+
             DOM.seedButton.disabled = true;
             DOM.seedButton.textContent = 'Seeding... Please wait.';
 
-            // Define the devices to be added
-            const devicesToSeed = [
-                { id: "DTEN-Board", name: "DTEN Board", status: "available" }, 
-                { id: "Poly-Studio", name: "Poly Studio P15", status: "available" }
-            ];
 
             try {
                 console.log(`Starting database seeding with ${devicesToSeed.length} devices...`);
@@ -323,7 +328,7 @@
                 
                 case 'reserve_available':
                     // Reserves an available item, changing its status to 'reserved'. 
-                    // Also used to take over an existing reservation.
+                    // Also used to take over an existing reservation when the device is reserved by others.
                     newStatus = 'reserved';
                     updateData = {
                         status: newStatus,
@@ -493,7 +498,6 @@
                     `);
                 } else {
                     // Reserved by Others: Show the standard Reserve option. This action will claim the reservation slot.
-                    // This satisfies the user's request to see a "Reserve" option here.
                     buttonsHtml.push(`
                         <!-- Action: reserve_available will claim the reservation, replacing the existing one. -->
                         <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
@@ -615,7 +619,7 @@
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.innerHTML = `
                     <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the **Seed** button to add the devices.</p>
+                    <p class="mb-4">Click the **Seed** button to add the devices. (The seed data array is currently empty.)</p>
                     <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
                 `;
                 DOM.list.appendChild(message);
