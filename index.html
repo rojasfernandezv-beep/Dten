@@ -123,7 +123,7 @@
 
         let db, auth, userId = null;
         let devicesCollectionRef = null;
-        let currentDevices = []; // NEW: Store the current state of devices for validation
+        let currentDevices = []; // Store the current state of devices for display logic
         
         // --- Utility Functions ---
 
@@ -162,17 +162,7 @@
                 const userInfo = getUserInfo();
                 if (!userInfo) return; // Error handled by getUserInfo
                 
-                // NEW VALIDATION: Check if this return date is already in use by another device
-                const blockedDevice = currentDevices.find(d => 
-                    d.id !== deviceId && // Ignore the device being checked out
-                    d.status === 'checked_out' && // Only check devices currently checked out
-                    d.expectedReturnDate === userInfo.returnDate // Check for date conflict
-                );
-
-                if (blockedDevice) {
-                    displayError(`The return date ${userInfo.returnDate} is already reserved by another device (${blockedDevice.name}). Please select a different date.`);
-                    return;
-                }
+                // In v7, there was no validation for conflicting return dates.
 
                 updateData.checkedOutBy = userId;
                 updateData.checkedOutByUserName = userInfo.name;
