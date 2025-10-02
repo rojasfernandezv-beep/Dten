@@ -303,13 +303,7 @@
         // --- Main Initialization and Authentication ---
 
         async function initFirebase() {
-            if (!Object.keys(firebaseConfig).length) {
-                // If the config object is empty, we must stop.
-                // Display the same message as the environment is likely the source of the empty config.
-                const spinner = document.getElementById('loading-spinner');
-                if(spinner) spinner.remove();
-                return displayError("Firebase configuration is missing. Cannot start application. Please ensure the Canvas environment is providing the __firebase_config variable.");
-            }
+            // REMOVED: if (!Object.keys(firebaseConfig).length) check
             
             // Log the received configuration for debugging (do not log the full key/token)
             console.log("Using Firebase Project ID:", firebaseConfig.projectId);
