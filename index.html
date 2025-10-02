@@ -365,7 +365,10 @@
 
                 case 'reserve_queue':
                     // Reserves a checked-out item. Status remains 'checked_out' (by omission).
+                    // This action is allowed if no one is in the queue, OR if the current user is already in the queue.
                     newStatus = 'checked_out (reservation queued)';
+                    
+                    // Simple logic: if the user is already the queued person, just overwrite/update their existing reservation date.
                     updateData = {
                         ...reservationPayload, // Only update reservation fields
                         // NOTE: 'status' is omitted, keeping it as 'checked_out'
@@ -422,11 +425,12 @@
             const isAvailable = device.status === 'available';
             
             const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
-            const isReservedByMe = isReserved && device.reservedBy === userId;
+            // Removed isReservedByMe calculation as it is not needed for the Reserved button logic
             
             // Check if there is a pending reservation (regardless of primary status)
             const hasPendingReservation = !!device.reservedBy; 
             const hasPendingReservationByMe = hasPendingReservation && device.reservedBy === userId;
+            const hasPendingReservationByOther = hasPendingReservation && device.reservedBy !== userId;
             
             // Check for overdue checkout or expired reservation (past current date)
             const today = new Date().toISOString().split('T')[0];
@@ -453,12 +457,15 @@
             const reservationDetails = hasPendingReservation 
                 ? `<p class="mt-2 text-info text-xs"><span class="font-bold">Queue:</span> Reserved by ${hasPendingReservationByMe ? 'You' : device.reservedByUserName} until ${device.reservationEndDate}.</p>` 
                 : '';
+            
+            // Determine who the device is reserved by for display
+            const reservedByDisplay = device.reservedBy === userId ? 'Reserved By You' : 'Reserved By:';
 
             if (isReserved) {
                 statusColor = isPastDue ? 'bg-warning' : 'bg-info';
                 statusText = isPastDue ? 'RESERVATION EXPIRED' : 'Reserved';
                 details = `
-                    <p><span class="font-semibold">${isReservedByMe ? 'Reserved By You' : 'Reserved By:'}</span> ${device.reservedByUserName || 'Unknown'}</p>
+                    <p><span class="font-semibold">${reservedByDisplay}</span> ${device.reservedByUserName || 'Unknown'}</p>
                     <p><span class="font-semibold">End Date:</span> ${displayDate}</p>
                 `;
             } else if (isCheckedOut) {
@@ -494,8 +501,9 @@
                             Check In
                         </button>
                     `);
-                } else if (!hasPendingReservation) { 
-                    // Checked Out By Others AND no reservation is queued: Show Reserve for Later
+                } else if (!hasPendingReservation || hasPendingReservationByMe) { 
+                    // CRITICAL FIX: If no one is queued, OR if the current user is already the queued person (hasPendingReservationByMe),
+                    // allow them to re-queue (which updates their existing reservation date).
                     buttonsHtml.push(`
                         <!-- Action: reserve_queue -->
                         <button data-action="reserve_queue" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
@@ -503,10 +511,10 @@
                         </button>
                     `);
                 } else {
-                     // Checked Out by Others AND Reservation is Queued: Disabled button
+                     // Checked Out by Others AND Reservation is Queued BY OTHER: Disabled button
                     buttonsHtml.push(`
                         <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
-                            Reservation Queued (${hasPendingReservationByMe ? 'By You' : 'By Other'})
+                            Reservation Queued (by Other)
                         </button>
                     `);
                 }
@@ -520,14 +528,14 @@
                     </button>
                 `);
 
-                // 2. Check Out Now (Only works if the user is the reservation holder AND they provide matching credentials)
+                // 2. Check Out Now (Requires matching credentials)
                 buttonsHtml.push(`
                     <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600 ml-2">
                         Check Out Now
                     </button>
                 `);
 
-                // 3. Cancel Reservation (Only works if the user is the reservation holder AND they provide matching credentials)
+                // 3. Cancel Reservation (Requires matching credentials)
                 buttonsHtml.push(`
                     <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
                         Cancel Reservation
