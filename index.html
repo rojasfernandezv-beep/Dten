@@ -18,7 +18,7 @@
                         'success': '#10b981', /* Green */
                         'danger': '#ef4444',  /* Red */
                         'warning': '#f59e0b', /* Amber */
-                        'info': '#3b82f6',    /* Blue for Reservation */
+                        'info': '#3b82f6',    /* Blue for Reservation */
                     }
                 }
             }
@@ -37,7 +37,7 @@
         <!-- User Information Form (Required for Checkout/Reservation/Confirmation) -->
         <h2 class="text-2xl font-semibold text-gray-700 mb-3">Your Information for Action & Confirmation</h2>
         <p class="text-sm text-gray-600 mb-4">Please enter your details here for **new** checkouts/reservations, or to **confirm** your identity for check-ins and cancellations.</p>
-
+ 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 border border-gray-200 rounded-xl bg-indigo-50/50">
             <div>
                 <label for="user-name-input" class="block text-sm font-medium text-gray-700">Full Name</label>
@@ -59,7 +59,7 @@
             </div>
             <div>
                 <!-- Label is 'Select a date' -->
-                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Expected Return/Reservation End Date</label>
                 <input
                     type="date"
                     id="return-date-input"
@@ -71,14 +71,14 @@
         
         <!-- Device List Container -->
         <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
-
+ 
         <!-- Action Buttons Container: Seed and Clear -->
         <div id="seed-data-container" class="mt-4 mb-8 flex space-x-4 items-start">
             <div>
                 <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
                     Seed Initial Device Data
                 </button>
-                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system. (The seed data array is currently empty.)</p>
+                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices (DTEN Board, Poly Studio) to the system.</p>
             </div>
             <div>
                 <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
@@ -88,7 +88,7 @@
             </div>
         </div>
         <!-- END Action Buttons Container -->
-
+ 
         <div id="device-list" class="space-y-4">
             <div id="loading-spinner" class="flex justify-center items-center py-10">
                 <svg class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -98,21 +98,21 @@
             </div>
         </div>
     </div>
-
+ 
     <!-- Firebase SDK Imports and Logic -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         // NOTE: getDoc is imported here to fetch the current state for reservation date validation
         import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
+        
         // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
         const ESSENTIAL_FIREBASE_DEFAULTS = {
-            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM", 
+            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
             projectId: "device-checkout-system",
         };
         // -------------------------------------------------------------------------
-
+        
         // --- Initialization Constants ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
@@ -171,7 +171,7 @@
             const date = DOM.returnDateInput.value;
             
             if (!name || !email || !date) {
-                displayError("Please enter your Full Name, Email, and select a date.");
+                displayError("Please enter your Full Name, Email, and select an expected return/reservation date.");
                 return null;
             }
             return { name, email, date }; // Renamed returnDate to date for generic use
@@ -226,14 +226,14 @@
         async function seedInitialData() {
             if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
 
-            // Define the devices to be added. This array is now empty as requested by the user.
+            // Define the devices to be added. Uncommented for immediate testing.
             const devicesToSeed = [
-                // { id: "DTEN-Board", name: "DTEN Board", status: "available" }, 
-                // { id: "Poly-Studio", name: "Poly Studio P15", status: "available" }
+                { id: "DTEN-Board", name: "DTEN Board", status: "available" }, 
+                { id: "Poly-Studio", name: "Poly Studio P15", status: "available" }
             ];
             
             if (devicesToSeed.length === 0) {
-                 return displayError("No devices are defined in the seed data array to be added.");
+                return displayError("No devices are defined in the seed data array to be added.");
             }
 
             DOM.seedButton.disabled = true;
@@ -262,7 +262,8 @@
         
         /**
          * Updates the device status for checkout, check-in, reservation, or cancellation.
-         * Note: 'reserve_available' changes status to 'reserved'. 'reserve_queue' only sets reservation fields.
+         * Note: 'reserve_available' changes status to 'reserved'. 'reserve_queue' only sets
+         * reservation fields (status remains 'checked_out').
          * @param {string} deviceId 
          * @param {'checked_out'|'check_in'|'reserve_available'|'reserve_queue'|'cancel_reservation'|'checkout_reserved'} action 
          * @param {object | null} deviceForCheckout If action is 'checkout_reserved', this should be the full device object.
@@ -337,7 +338,7 @@
                         ...clearPayload,
                     };
                     break;
-                
+                    
                 case 'reserve_available':
                     // Reserves an available item, or takes over an existing reservation.
                     
@@ -345,7 +346,7 @@
                     
                     if (isReservedByOther) {
                         const existingEndDate = currentDevice.reservationEndDate; // e.g., "2025-10-10"
-                        const requestedEndDate = userInfo.date;                   // e.g., "2025-10-10"
+                        const requestedEndDate = userInfo.date;   // e.g., "2025-10-10"
                         
                         // Check if the requested date is on or before the existing reservation end date
                         if (requestedEndDate <= existingEndDate) { 
@@ -438,7 +439,7 @@
                 isPastDue = device.reservationEndDate && (device.reservationEndDate < today);
                 displayDate = device.reservationEndDate;
             } else if (isCheckedOut && hasPendingReservation) {
-                 // Even if checked out, check the reservation end date for relevance
+                // Even if checked out, check the reservation end date for relevance
                 displayDate = device.expectedReturnDate; 
             }
 
@@ -449,7 +450,7 @@
             
             // If device is checked out AND has a reservation, show the reservation status in details
             const reservationDetails = hasPendingReservation 
-                ? `<p class="mt-2 text-info text-xs"><span class="font-bold">Queue:</span> Reserved by ${hasPendingReservationByMe ? 'You' : device.reservedByUserName} until ${device.reservationEndDate}.</p>` 
+                ? `<p class="mt-2 text-info text-xs"><span class="font-bold">Queue:</span> Reserved by ${hasPendingReservationByMe ? 'You' : device.reservedByUserName} until ${device.reservationEndDate}.</p>`
                 : '';
 
             if (isReserved) {
@@ -501,7 +502,7 @@
                         </button>
                     `);
                 } else {
-                     // Checked Out by Others AND Reservation is Queued: Disabled button
+                    // Checked Out by Others AND Reservation is Queued: Disabled button
                     buttonsHtml.push(`
                         <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
                             Reservation Queued (${hasPendingReservationByMe ? 'By You' : 'By Other'})
@@ -620,147 +621,118 @@
                              return;
                         }
                         
-                         // If confirmation passes, proceed with 1-Click reserved checkout
-                         updateDeviceStatus(device.id, action, device);
+                        // If confirmation passes, proceed with 1-Click reserved checkout
+                        updateDeviceStatus(device.id, action, device);
                     } else if (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue') {
                         // All these actions require form data, and reserve_available/reserve_queue will now handle date checks
                         updateDeviceStatus(device.id, action);
-                    }
+                    } // The rest of the logic was missing its closing bracket
                 });
             });
-
             return card;
-        }
+        } // Closing the createDeviceCard function
 
+        /**
+         * Clears the current list and renders cards for all devices.
+         * @param {Array<object>} devices 
+         */
         function renderDeviceList(devices) {
-            DOM.list.innerHTML = '';
-            
-            const spinner = document.getElementById('loading-spinner');
-            if(spinner) spinner.remove();
+            currentDevices = devices; // Update global state
+            DOM.list.innerHTML = ''; // Clear existing list
+            DOM.spinner.classList.add('hidden');
 
             if (devices.length === 0) {
-                const message = document.createElement('div');
-                message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
-                message.innerHTML = `
-                    <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the **Seed** button to add the devices. (The seed data array is currently empty.)</p>
-                    <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
+                DOM.list.innerHTML = `
+                    <div class="text-center p-8 bg-gray-50 rounded-lg shadow-inner">
+                        <p class="text-xl font-medium text-gray-700">No Devices Found</p>
+                        <p class="text-gray-500 mt-2">Please click 'Seed Initial Device Data' to add some demo devices.</p>
+                        <p class="text-xs text-gray-400 mt-2">Authenticated User ID: ${userId || 'N/A'}</p>
+                    </div>
                 `;
-                DOM.list.appendChild(message);
-                
                 DOM.seedContainer.classList.remove('hidden');
-                return;
+            } else {
+                devices.forEach(device => {
+                    DOM.list.appendChild(createDeviceCard(device));
+                });
             }
-            
-            DOM.seedContainer.classList.add('hidden'); // Hide seed/clear buttons when data exists (optional)
-            
-            // Sort: Overdue/Expired > Checked Out > Reserved > Available
-            devices.sort((a, b) => {
-                const today = new Date().toISOString().split('T')[0];
-
-                const isAPastDue = (a.status === 'checked_out' && a.expectedReturnDate < today) || (a.status === 'reserved' && a.reservationEndDate < today);
-                const isBPastDue = (b.status === 'checked_out' && b.expectedReturnDate < today) || (b.status === 'reserved' && b.reservationEndDate < today);
-                
-                if (isAPastDue && !isBPastDue) return -1;
-                if (isBPastDue && !isAPastDue) return 1;
-
-                if (a.status === 'checked_out' && b.status !== 'checked_out') return -1;
-                if (b.status === 'checked_out' && a.status !== 'checked_out') return 1;
-
-                if (a.status === 'reserved' && b.status === 'available') return -1;
-                if (b.status === 'reserved' && a.status === 'available') return 1;
-
-                return 0;
-            }); 
-
-            devices.forEach(device => DOM.list.appendChild(createDeviceCard(device)));
         }
 
-        // --- Main Initialization and Authentication ---
-
-        async function initFirebase() {
-            if (!firebaseConfig.projectId || !firebaseConfig.apiKey) {
-                const spinner = document.getElementById('loading-spinner');
-                if(spinner) spinner.remove();
-                return displayError("CRITICAL: Final configuration is still missing Project ID or API Key. Cannot proceed.");
-            }
+        /**
+         * Sets up the real-time listener for the devices collection.
+         */
+        function listenForDevices() {
+            if (!devicesCollectionRef) return;
             
-            // Attach button listeners
-            DOM.seedButton.addEventListener('click', seedInitialData);
-            DOM.clearButton.addEventListener('click', deleteAllDevices);
+            // Query for all documents in the collection
+            const q = query(devicesCollectionRef);
 
-            console.log("Firebase Initialization: Using Project ID:", firebaseConfig.projectId);
-
+            // Set up the real-time listener
+            onSnapshot(q, (querySnapshot) => {
+                const devices = [];
+                querySnapshot.forEach((doc) => {
+                    // Extract device data, ensuring the document ID is included
+                    devices.push({ id: doc.id, ...doc.data() });
+                });
+                renderDeviceList(devices);
+            }, (error) => {
+                displayError(`Real-time database error: ${error.message}`);
+                DOM.spinner.classList.add('hidden');
+            });
+        }
+        
+        /**
+         * Initializes Firebase and authenticates the user.
+         */
+        async function setupFirebase() {
             try {
-                setLogLevel('debug');
+                // Configure Firebase logging for better debugging
+                setLogLevel('Debug');
                 
                 const app = initializeApp(firebaseConfig);
-                
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
+                // Set persistence to session to maintain login state during refresh
                 await setPersistence(auth, browserSessionPersistence);
-                
-                // 1. Setup Firestore Collection and Listener
-                const collectionPath = `artifacts/${appId}/public/data/devices`;
-                devicesCollectionRef = collection(db, collectionPath);
-                startRealtimeListener();
-                
-                // 2. Perform Authentication
-                const authenticateUser = async () => {
-                    try {
-                        if (initialAuthToken) {
-                            await signInWithCustomToken(auth, initialAuthToken);
-                            console.log("Authentication attempted with custom token.");
-                        } else {
-                            await signInAnonymously(auth);
-                            console.log("Authentication attempted anonymously.");
-                        }
-                    } catch(e) {
-                        console.error("Authentication failed:", e);
-                    }
-                };
-                authenticateUser();
 
-                // 3. Set up Auth State Observer
+                // Determine the correct collection path using the provided app ID
+                // Public data path: /artifacts/{appId}/public/data/devices
+                devicesCollectionRef = collection(db, `artifacts/${appId}/public/data/devices`);
+                
+                // Sign in using the custom token if provided, otherwise sign in anonymously
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+
+                // Wait for auth state to stabilize
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
                         userId = user.uid;
-                        console.log("Auth State Changed: User is authenticated with ID:", userId); 
+                        console.log(`Firebase Initialized. User ID: ${userId}`);
+                        listenForDevices(); // Start listening for data once authenticated
                     } else {
                         userId = null;
-                        console.log("Auth State Changed: User is not authenticated.");
+                        displayError("Authentication failed or is not available.");
+                        DOM.spinner.classList.add('hidden');
                     }
-                    clearError();
                 });
 
             } catch (e) {
-                const spinner = document.getElementById('loading-spinner');
-                if(spinner) spinner.remove();
-                displayError(`Application Error: Cannot initialize database or Firebase services. Details: ${e.message}`);
+                displayError(`Firebase setup failed: ${e.message}`);
+                DOM.spinner.classList.add('hidden');
             }
         }
-        
-        function startRealtimeListener() {
-            if (!devicesCollectionRef) return;
-            
-            const devicesQuery = query(devicesCollectionRef);
-            
-            onSnapshot(devicesQuery, (snapshot) => {
-                const devices = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data(),
-                }));
 
-                currentDevices = devices; 
-                renderDeviceList(devices);
-            }, (err) => {
-                displayError(`Real-time Listener Error: ${err.message}. If the list is empty, ensure your Firebase Security Rules allow 'read' access for authenticated users.`);
-            });
-        }
+        // --- Event Listeners and Initial Call ---
+
+        DOM.seedButton.addEventListener('click', seedInitialData);
+        DOM.clearButton.addEventListener('click', deleteAllDevices);
 
         // Start the application
-        window.onload = initFirebase;
+        setupFirebase();
+
     </script>
 </body>
 </html>
