@@ -28,7 +28,7 @@
             orderBy,
             serverTimestamp,
             setLogLevel,
-            runTransaction // NEW: Imported for atomic check-out
+            runTransaction
         } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // IMPORTANT: Log level set to debug for firestore
@@ -80,6 +80,7 @@
         function showMessage(message, type = 'info') {
             const msgBox = document.getElementById('message-box');
             msgBox.textContent = message;
+            // Ensure classes are cleared before re-applying
             msgBox.classList.remove('hidden', 'bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800', 'bg-blue-100', 'text-blue-800');
             
             switch(type) {
@@ -94,6 +95,7 @@
                     msgBox.classList.add('bg-blue-100', 'text-blue-800');
             }
 
+            // Set a timeout to clear the message
             setTimeout(() => {
                 msgBox.classList.add('hidden');
             }, 5000);
@@ -201,7 +203,7 @@
         function updateStatusUI(statusData) {
             const statusCard = document.getElementById('status-card');
             const statusText = document.getElementById('status-text');
-            const statusLight = document.getElementById('status-light'); // Added status light element
+            const statusLight = document.getElementById('status-light');
             const currentHolder = document.getElementById('current-holder-info');
             const checkinSection = document.getElementById('checkin-section');
             const checkoutForm = document.getElementById('checkout-form');
@@ -231,7 +233,7 @@
                 
                 const returnDate = checkout.expectedReturnDate || 'N/A';
                 
-                // FIX: Robust check for null/undefined and function existence to prevent 'toDate' error
+                // Robust check for null/undefined and function existence to prevent 'toDate' error
                 const checkoutDate = checkout.checkoutDate;
                 const checkoutTimeStr = (checkoutDate && typeof checkoutDate.toDate === 'function') 
                     ? new Date(checkoutDate.toDate()).toLocaleString() 
@@ -281,7 +283,7 @@
             }
 
             historyData.forEach(item => {
-                // FIX: Robust check for null/undefined and function existence
+                // Robust check for null/undefined and function existence
                 const checkoutDate = item.checkoutDate;
                 const checkinDate = item.checkinDate;
 
@@ -337,66 +339,62 @@
             }
 
             const statusRef = doc(db, DEVICE_STATUS_PATH);
-            const historyRef = collection(db, CHECKOUT_COLLECTION_PATH);
-            
-            // 1. Get a unique ID for the history log document outside the transaction
-            const newHistoryRef = doc(historyRef); 
-            const historyDocId = newHistoryRef.id;
+            const historyCollectionRef = collection(db, CHECKOUT_COLLECTION_PATH);
 
             try {
                 document.getElementById('checkout-button').disabled = true;
 
-                // 2. RUN TRANSACTION: Atomically check status and update it to unavailable
+                // CRITICAL FIX: Use runTransaction to make status check and history write atomic
                 await runTransaction(db, async (transaction) => {
                     
-                    // Read the current status document within the transaction
+                    // 1. Read the current status document within the transaction
                     const statusSnap = await transaction.get(statusRef);
+                    const statusData = statusSnap.data();
                     
-                    // Check if the device is currently available
-                    if (!statusSnap.exists() || !statusSnap.data().isAvailable) {
-                        // Throwing a custom string aborts the transaction and signals the error
+                    // 2. CHECK: If the device is not available, throw a custom error to abort
+                    if (statusData && !statusData.isAvailable) {
                         throw "ALREADY_CHECKED_OUT"; 
                     }
 
-                    // Data for the main status update
+                    // 3. Setup: Get a unique ID for the new history log document
+                    const newHistoryRef = doc(historyCollectionRef); 
+                    const historyDocId = newHistoryRef.id;
+
+                    // 4. Data to write
                     const checkoutData = {
                         name,
                         email,
                         checkedOutByUserId: userId,
-                        checkoutDate: serverTimestamp(), // Use serverTimestamp for atomic update
+                        checkoutDate: serverTimestamp(),
                         expectedReturnDate,
-                        historyDocId: historyDocId
+                        historyDocId: historyDocId // Reference to the new history log document
                     };
                     
-                    // Atomic Write: Mark the device unavailable and set current holder
+                    const historyData = {
+                        ...checkoutData,
+                        checkinDate: null, 
+                        currentStatus: 'ACTIVE'
+                    };
+
+                    // 5. Atomic Write 1: Update the main status document
                     transaction.update(statusRef, {
                         isAvailable: false,
                         currentCheckout: checkoutData,
                         lastUpdated: serverTimestamp()
                     });
 
-                }); // End of transaction
+                    // 6. Atomic Write 2: Create the history log document
+                    transaction.set(newHistoryRef, historyData);
+                });
 
-                // 3. If the transaction succeeded, perform the second, non-atomic write (history log)
-                const historyData = {
-                    name,
-                    email,
-                    checkedOutByUserId: userId,
-                    // Note: Use serverTimestamp() again for history, Firestore handles the synchronization
-                    checkoutDate: serverTimestamp(), 
-                    expectedReturnDate,
-                    checkinDate: null, 
-                    currentStatus: 'ACTIVE'
-                };
-                await setDoc(newHistoryRef, historyData);
-
-                showMessage("Device successfully checked out! Refresh your browser to confirm persistence.", 'success');
+                // If the transaction succeeded, show success message
+                showMessage("Device successfully checked out! It is now unavailable.", 'success');
                 clearForm();
 
             } catch (error) {
                 // Handle the transaction's specific error or a general Firestore error
                 if (error === "ALREADY_CHECKED_OUT") {
-                    showMessage("Error: The device is currently checked out by another user. Please wait for it to be returned.", 'error');
+                    showMessage("Error: The device is currently checked out by another user. Please check the status above.", 'error');
                 } else if (error.code === 'permission-denied') {
                     showMessage("Error: Permission Denied. Please ensure your Firestore Security Rules are published correctly.", 'error');
                 } else {
