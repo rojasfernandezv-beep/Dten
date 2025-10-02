@@ -269,6 +269,7 @@
             if (!devicesCollectionRef) return displayError("Database not initialized.");
             
             // Re-get userInfo only if needed for standard checkout/reservation
+            // Note: reserve_available is used for both available and reserved (takeover) states, requiring form data.
             const needsFormInfo = (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue');
             const userInfo = needsFormInfo ? getUserInfo() : null;
             if (needsFormInfo && !userInfo) return; // Error handled by getUserInfo
@@ -321,7 +322,8 @@
                     break;
                 
                 case 'reserve_available':
-                    // Reserves an available item, changing its status to 'reserved'
+                    // Reserves an available item, changing its status to 'reserved'. 
+                    // Also used to take over an existing reservation.
                     newStatus = 'reserved';
                     updateData = {
                         status: newStatus,
@@ -391,7 +393,7 @@
             const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
             const isReservedByMe = isReserved && device.reservedBy === userId;
             
-            // NEW: Check if there is a pending reservation (regardless of primary status)
+            // Check if there is a pending reservation (regardless of primary status)
             const hasPendingReservation = !!device.reservedBy; 
             const hasPendingReservationByMe = hasPendingReservation && device.reservedBy === userId;
             
@@ -462,7 +464,7 @@
                         </button>
                     `);
                 } else if (!hasPendingReservation) { 
-                    // FIX: Checked Out By Others AND no reservation is queued: Show Reserve for Later
+                    // Checked Out By Others AND no reservation is queued: Show Reserve for Later
                     buttonsHtml.push(`
                         <!-- Action: reserve_queue -->
                         <button data-action="reserve_queue" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
@@ -490,10 +492,12 @@
                         </button>
                     `);
                 } else {
-                    // Reserved by Others: Show Disabled button
+                    // Reserved by Others: Show the standard Reserve option. This action will claim the reservation slot.
+                    // This satisfies the user's request to see a "Reserve" option here.
                     buttonsHtml.push(`
-                        <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
-                            Reserved by Other
+                        <!-- Action: reserve_available will claim the reservation, replacing the existing one. -->
+                        <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
+                            Reserve
                         </button>
                     `);
                 }
@@ -574,7 +578,7 @@
 
                         updateDeviceStatus(device.id, action);
                     } else if (action === 'checkout_reserved') {
-                        // NEW Security Check: Require name and email verification for Check Out Now
+                        // Security Check: Require name and email verification for Check Out Now
                         const currentUserName = DOM.nameInput.value.trim();
                         const currentUserEmail = DOM.emailInput.value.trim();
                         
