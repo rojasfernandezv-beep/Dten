@@ -91,14 +91,17 @@
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
         
-        let firebaseConfig;
-        try {
-            // MANDATORY: Parse the global config provided by the Canvas environment.
-            firebaseConfig = JSON.parse(__firebase_config);
-        } catch (e) {
-            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Environment issue suspected.", e);
-            // Use an empty object as a safe, non-fatal fallback.
-            firebaseConfig = {}; 
+        let firebaseConfig = {};
+        // Safely retrieve and trim the config string
+        const configString = (typeof __firebase_config === 'string' && __firebase_config.trim()) ? __firebase_config : null;
+
+        if (configString) {
+            try {
+                // MANDATORY: Parse the global config provided by the Canvas environment.
+                firebaseConfig = JSON.parse(configString);
+            } catch (e) {
+                console.error("CRITICAL ERROR: Failed to parse __firebase_config JSON. Environment issue suspected.", e);
+            }
         }
         
         const DOM = {
@@ -304,7 +307,7 @@
         async function initFirebase() {
             if (!Object.keys(firebaseConfig).length) {
                 // Only show this error if the environment config was truly empty
-                return displayError("Firebase configuration is missing. Cannot start application.");
+                return displayError("Firebase configuration is missing. Cannot start application. Please ensure the Canvas environment is providing the __firebase_config variable.");
             }
             
             // Log the received configuration for debugging (do not log the full key/token)
@@ -387,6 +390,4 @@
     </script>
 </body>
 </html>
-
-
 
