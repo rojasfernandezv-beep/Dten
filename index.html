@@ -552,7 +552,8 @@
 
                         if (!currentUserName || currentUserName !== requiredUserName ||
                             !currentUserEmail || currentUserEmail !== requiredUserEmail) {
-                             displayError(`To check in "${device.name}", please ensure your full Name ("${requiredUserName}") and Email ("${requiredUserEmail}") match the details used for checkout.`);
+                             // UPDATED ERROR MESSAGE: Removed the revealing information
+                             displayError(`To check in "${device.name}", please ensure your full Name and Email match the details used for checkout.`);
                              return;
                         }
                         updateDeviceStatus(device.id, action);
@@ -566,7 +567,8 @@
 
                         if (!currentUserName || currentUserName !== requiredUserName || 
                             !currentUserEmail || currentUserEmail !== requiredUserEmail) {
-                             displayError(`To cancel the reservation for "${device.name}", please confirm your identity by entering the exact Name ("${requiredUserName}") and Email ("${requiredUserEmail}") you used to reserve it.`);
+                             // UPDATED ERROR MESSAGE: Removed the revealing information
+                             displayError(`To cancel the reservation for "${device.name}", please confirm your identity by entering the exact Name and Email you used to reserve it.`);
                              return;
                         }
 
