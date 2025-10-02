@@ -3,315 +3,739 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Unlimited Reservation Manager</title>
+    <title>Device Checkout System</title>
     <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Custom styles for Inter font and better feel */
-        body {
-            font-family: 'Inter', sans-serif;
-            background-color: #f7f9fb;
-        }
-        .container {
-            max-width: 900px;
-        }
-        /* Custom scrollbar for the reservations list */
-        #reservations-list-container::-webkit-scrollbar {
-            width: 8px;
-        }
-        #reservations-list-container::-webkit-scrollbar-thumb {
-            background-color: #a0aec0;
-            border-radius: 4px;
-        }
-        #reservations-list-container::-webkit-scrollbar-track {
-            background-color: #e2e8f0;
-        }
-    </style>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
                     colors: {
                         'primary': '#4f46e5',
-                        'secondary': '#60a5fa',
-                    },
+                        'success': '#10b981', /* Green */
+                        'danger': '#ef4444',  /* Red */
+                        'warning': '#f59e0b', /* Amber */
+                        'info': '#3b82f6',    /* Blue for Reservation */
+                    }
                 }
             }
         }
     </script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+    </style>
 </head>
-<body class="min-h-screen p-4 sm:p-8 flex flex-col items-center">
-
-    <div class="container w-full bg-white shadow-xl rounded-xl p-6 lg:p-10">
-        <h1 class="text-3xl font-extrabold text-primary mb-2 text-center">
-            Unlimited Reservation Manager
-        </h1>
-        <p class="text-gray-500 mb-6 text-center">
-            Signed in as User ID: <span id="user-id" class="font-mono text-xs bg-gray-100 p-1 rounded">Loading...</span>
-        </p>
-
-        <!-- Reservation Form -->
-        <div class="mb-8 p-4 bg-indigo-50 rounded-lg border border-indigo-200">
-            <h2 class="text-2xl font-semibold text-primary mb-4">Make a New Reservation</h2>
-            <form id="reservation-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <input type="text" id="name" placeholder="Name" required
-                       class="p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
-
-                <input type="date" id="date" required
-                       class="p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
-
-                <input type="time" id="time" required
-                       class="p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary">
-
-                <button type="submit"
-                        class="md:col-span-2 bg-primary text-white font-bold py-3 px-4 rounded-lg shadow-lg hover:bg-indigo-700 transition duration-300 transform hover:scale-[1.01]">
-                    Book Now
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8">
+    <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
+        <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">Device Checkout Hub</h1>
+        
+        <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 bg-opacity-70 rounded-lg" role="alert"></div>
+        
+        <!-- User Information Form (Required for Checkout/Reservation/Confirmation) -->
+        <h2 class="text-2xl font-semibold text-gray-700 mb-3">Your Information for Action & Confirmation</h2>
+        <p class="text-sm text-gray-600 mb-4">Please enter your details here for **new** checkouts/reservations, or to **confirm** your identity for check-ins and cancellations.</p>
+ 
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 border border-gray-200 rounded-xl bg-indigo-50/50">
+            <div>
+                <label for="user-name-input" class="block text-sm font-medium text-gray-700">Full Name</label>
+                <input
+                    type="text"
+                    id="user-name-input"
+                    placeholder="Jane Doe"
+                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
+                >
+            </div>
+            <div>
+                <label for="user-email-input" class="block text-sm font-medium text-gray-700">Email Address</label>
+                <input
+                    type="email"
+                    id="user-email-input"
+                    placeholder="jane@company.com"
+                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
+                >
+            </div>
+            <div>
+                <!-- Label is 'Select a date' -->
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Expected Return/Reservation End Date</label>
+                <input
+                    type="date"
+                    id="return-date-input"
+                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
+                    min="${new Date().toISOString().split('T')[0]}"
+                >
+            </div>
+        </div>
+        
+        <!-- Device List Container -->
+        <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
+ 
+        <!-- Action Buttons Container: Seed and Clear -->
+        <div id="seed-data-container" class="mt-4 mb-8 flex space-x-4 items-start">
+            <div>
+                <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
+                    Seed Initial Device Data
                 </button>
-            </form>
-            <div id="message-box" class="mt-4 p-3 rounded-lg text-sm hidden"></div>
+                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices (DTEN Board, Poly Studio) to the system.</p>
+            </div>
+            <div>
+                <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
+                    Clear All Devices
+                </button>
+                <p class="text-sm text-gray-500 mt-2">Use this to remove all devices from the database.</p>
+            </div>
         </div>
-
-        <!-- Reservations List -->
-        <h2 class="text-2xl font-semibold text-gray-700 mb-4 border-b pb-2">Future Reservations</h2>
-        <div id="loading-indicator" class="text-center text-gray-500 p-4">
-            <svg class="animate-spin h-5 w-5 text-primary inline-block mr-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            Loading reservations...
-        </div>
-        <div id="reservations-list-container" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
-            <!-- Reservations will be rendered here -->
+        <!-- END Action Buttons Container -->
+ 
+        <div id="device-list" class="space-y-4">
+            <div id="loading-spinner" class="flex justify-center items-center py-10">
+                <svg class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
         </div>
     </div>
-
+ 
+    <!-- Firebase SDK Imports and Logic -->
     <script type="module">
-        // Mandatory Firebase imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, deleteDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // Global variables provided by the canvas environment
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // NOTE: getDoc is imported here to fetch the current state for reservation date validation
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
+        const ESSENTIAL_FIREBASE_DEFAULTS = {
+            apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
+            projectId: "device-checkout-system",
+        };
+        // -------------------------------------------------------------------------
+        
+        // --- Initialization Constants ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : '';
+        
+        let firebaseConfig = {};
 
-        let db, auth;
-        let currentUserId = 'anonymous';
-
-        const form = document.getElementById('reservation-form');
-        const reservationsListContainer = document.getElementById('reservations-list-container');
-        const messageBox = document.getElementById('message-box');
-        const userIdDisplay = document.getElementById('user-id');
-        const loadingIndicator = document.getElementById('loading-indicator');
-
-        // Function to display messages (instead of alert)
-        function showMessage(text, isError = false) {
-            messageBox.textContent = text;
-            messageBox.classList.remove('hidden');
-            if (isError) {
-                messageBox.className = 'mt-4 p-3 rounded-lg text-sm bg-red-100 text-red-700';
-            } else {
-                messageBox.className = 'mt-4 p-3 rounded-lg text-sm bg-green-100 text-green-700';
-            }
-            setTimeout(() => {
-                messageBox.classList.add('hidden');
-            }, 5000);
+        // 1. Attempt to parse environment config
+        try {
+            firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        } catch (e) {
+            console.error("CRITICAL ERROR: Failed to parse __firebase_config. Using defaults.", e);
         }
 
-        // 1. Initialize Firebase and Auth
-        async function initializeFirebase() {
-            if (!firebaseConfig) {
-                console.error("Firebase config is missing.");
-                return;
+        // 2. Guarantee the required fields using the fallback if missing
+        if (!firebaseConfig.apiKey) {
+            firebaseConfig.apiKey = ESSENTIAL_FIREBASE_DEFAULTS.apiKey;
+            console.warn("API Key was missing from environment config. Using hardcoded fallback.");
+        }
+        if (!firebaseConfig.projectId) {
+            firebaseConfig.projectId = ESSENTIAL_FIREBASE_DEFAULTS.projectId;
+            console.warn("Project ID was missing from environment config. Using hardcoded fallback.");
+        }
+        
+        const DOM = {
+            error: document.getElementById('error-message'),
+            list: document.getElementById('device-list'),
+            spinner: document.getElementById('loading-spinner'),
+            nameInput: document.getElementById('user-name-input'),
+            emailInput: document.getElementById('user-email-input'),
+            returnDateInput: document.getElementById('return-date-input'),
+            seedContainer: document.getElementById('seed-data-container'),
+            seedButton: document.getElementById('seed-data-button'),
+            clearButton: document.getElementById('clear-data-button'), 
+        };
+
+        let db, auth, userId = null;
+        let devicesCollectionRef = null;
+        let currentDevices = []; // Holds the latest data from onSnapshot
+        
+        // --- Utility Functions ---
+
+        function displayError(message) {
+            console.error(message);
+            DOM.error.textContent = message;
+            DOM.error.classList.remove('hidden');
+        }
+
+        function clearError() {
+            DOM.error.classList.add('hidden');
+            DOM.error.textContent = '';
+        }
+
+        function getUserInfo() {
+            const name = DOM.nameInput.value.trim();
+            const email = DOM.emailInput.value.trim();
+            const date = DOM.returnDateInput.value;
+            
+            if (!name || !email || !date) {
+                displayError("Please enter your Full Name, Email, and select an expected return/reservation date.");
+                return null;
+            }
+            return { name, email, date }; // Renamed returnDate to date for generic use
+        }
+        
+        // --- Firestore Operations ---
+
+        /**
+         * Deletes all documents in the devices collection.
+         */
+        async function deleteAllDevices() {
+            if (!devicesCollectionRef) return displayError("Database not initialized for clearing.");
+
+            DOM.seedButton.disabled = true;
+            DOM.clearButton.disabled = true;
+            DOM.clearButton.textContent = 'Clearing...';
+
+            try {
+                console.log("Starting deletion of all devices...");
+                
+                const snapshot = await getDocs(query(devicesCollectionRef));
+                
+                if (snapshot.empty) {
+                    console.log("Collection is already empty.");
+                    clearError();
+                    return;
+                }
+
+                const deletePromises = [];
+                snapshot.forEach((docSnap) => {
+                    const docRef = doc(db, devicesCollectionRef.path, docSnap.id);
+                    deletePromises.push(deleteDoc(docRef));
+                });
+                
+                await Promise.all(deletePromises);
+                
+                console.log(`Successfully deleted ${deletePromises.length} devices.`);
+                clearError();
+                
+            } catch (e) {
+                displayError(`Error clearing data: ${e.message}. If this persists, ensure your Firebase Security Rules allow 'delete' access for authenticated users on public data.`);
+            } finally {
+                DOM.seedButton.disabled = false;
+                DOM.clearButton.disabled = false;
+                DOM.clearButton.textContent = 'Clear All Devices';
+            }
+        }
+
+        /**
+         * Adds initial devices (if defined) to the Firestore collection.
+         */
+        async function seedInitialData() {
+            if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
+
+            // Define the devices to be added. Uncommented for immediate testing.
+            const devicesToSeed = [
+                { id: "DTEN-Board", name: "DTEN Board", status: "available" }, 
+                { id: "Poly-Studio", name: "Poly Studio P15", status: "available" }
+            ];
+            
+            if (devicesToSeed.length === 0) {
+                return displayError("No devices are defined in the seed data array to be added.");
+            }
+
+            DOM.seedButton.disabled = true;
+            DOM.seedButton.textContent = 'Seeding... Please wait.';
+
+            try {
+                console.log(`Starting database seeding with ${devicesToSeed.length} devices...`);
+                
+                const setPromises = devicesToSeed.map(device => {
+                    const docRef = doc(db, devicesCollectionRef.path, device.id); 
+                    // Use only the necessary fields for seeding
+                    return setDoc(docRef, { name: device.name, status: device.status }, { merge: true });
+                });
+                
+                await Promise.all(setPromises);
+                
+                console.log("Database seeding complete. Devices added.");
+                clearError();
+            } catch (e) {
+                displayError(`Error seeding data: ${e.message}`);
+            } finally {
+                DOM.seedButton.disabled = false;
+                DOM.seedButton.textContent = 'Seed Initial Device Data';
+            }
+        }
+        
+        /**
+         * Updates the device status for checkout, check-in, reservation, or cancellation.
+         * Note: 'reserve_available' changes status to 'reserved'. 'reserve_queue' only sets
+         * reservation fields (status remains 'checked_out').
+         * @param {string} deviceId 
+         * @param {'checked_out'|'check_in'|'reserve_available'|'reserve_queue'|'cancel_reservation'|'checkout_reserved'} action 
+         * @param {object | null} deviceForCheckout If action is 'checkout_reserved', this should be the full device object.
+         */
+        async function updateDeviceStatus(deviceId, action, deviceForCheckout = null) {
+            if (!userId) {
+                return displayError("Authentication is pending. Please wait a moment before taking action.");
+            }
+            if (!devicesCollectionRef) return displayError("Database not initialized.");
+            
+            // Re-get userInfo only if needed for standard checkout/reservation
+            const needsFormInfo = (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue');
+            const userInfo = needsFormInfo ? getUserInfo() : null;
+            if (needsFormInfo && !userInfo) return; // Error handled by getUserInfo
+
+            // Fetch current device state for validation purposes
+            const docRef = doc(db, devicesCollectionRef.path, deviceId);
+            let currentDevice = null;
+            
+            try {
+                const docSnap = await getDoc(docRef);
+                if (!docSnap.exists()) {
+                    return displayError("Device not found.");
+                }
+                currentDevice = docSnap.data();
+            } catch(e) {
+                return displayError(`Failed to read device state for validation: ${e.message}`);
+            }
+
+            let updateData = {};
+            let newStatus = '';
+
+            // Common reservation fields payload
+            const reservationPayload = {
+                reservedBy: userId,
+                reservedByUserName: userInfo?.name,
+                reservedByUserEmail: userInfo?.email,
+                reservationEndDate: userInfo?.date,
+            };
+            
+            // Common clear payload for both checkout and reservation fields
+            const clearPayload = {
+                checkedOutBy: null,
+                checkedOutByUserName: null,
+                checkedOutByUserEmail: null,
+                expectedReturnDate: null,
+                checkedOutAt: null,
+                reservedBy: null,
+                reservedByUserName: null,
+                reservedByUserEmail: null,
+                reservationEndDate: null,
+            };
+
+            switch (action) {
+                case 'checked_out':
+                    newStatus = 'checked_out';
+                    updateData = {
+                        status: newStatus,
+                        ...clearPayload, // Clear all fields first
+                        checkedOutBy: userId,
+                        checkedOutByUserName: userInfo.name,
+                        checkedOutByUserEmail: userInfo.email,
+                        expectedReturnDate: userInfo.date,
+                        checkedOutAt: new Date().toISOString(),
+                    };
+                    break;
+
+                case 'check_in':
+                    newStatus = 'available';
+                    updateData = {
+                        status: newStatus,
+                        ...clearPayload,
+                    };
+                    break;
+                    
+                case 'reserve_available':
+                    // Reserves an available item, or takes over an existing reservation.
+                    
+                    const isReservedByOther = currentDevice.status === 'reserved' && currentDevice.reservedBy !== userId;
+                    
+                    if (isReservedByOther) {
+                        const existingEndDate = currentDevice.reservationEndDate; // e.g., "2025-10-10"
+                        const requestedEndDate = userInfo.date;   // e.g., "2025-10-10"
+                        
+                        // Check if the requested date is on or before the existing reservation end date
+                        if (requestedEndDate <= existingEndDate) { 
+                            return displayError(`The device is reserved until ${existingEndDate}. Please select a date strictly after this date to place a new reservation.`);
+                        }
+                    }
+
+                    newStatus = 'reserved';
+                    updateData = {
+                        status: newStatus,
+                        ...clearPayload,
+                        ...reservationPayload,
+                    };
+                    break;
+
+                case 'reserve_queue':
+                    // Reserves a checked-out item. Status remains 'checked_out' (by omission).
+                    newStatus = 'checked_out (reservation queued)';
+                    updateData = {
+                        ...reservationPayload, // Only update reservation fields
+                        // NOTE: 'status' is omitted, keeping it as 'checked_out'
+                    };
+                    break;
+
+                case 'cancel_reservation': 
+                    // This action only appears when status is 'reserved' (reserved when available)
+                    newStatus = 'available';
+                    updateData = {
+                        status: newStatus,
+                        ...clearPayload,
+                    };
+                    break;
+
+                case 'checkout_reserved':
+                    if (!deviceForCheckout || deviceForCheckout.status !== 'reserved') {
+                        return displayError("Invalid device state for reserved checkout. Please refresh.");
+                    }
+                    
+                    newStatus = 'checked_out';
+                    
+                    // Use the stored reservation data for checkout
+                    updateData = {
+                        status: newStatus,
+                        ...clearPayload, // Clear all fields
+                        checkedOutBy: deviceForCheckout.reservedBy,
+                        checkedOutByUserName: deviceForCheckout.reservedByUserName,
+                        checkedOutByUserEmail: deviceForCheckout.reservedByUserEmail,
+                        expectedReturnDate: deviceForCheckout.reservationEndDate,
+                        checkedOutAt: new Date().toISOString(),
+                    };
+                    break;
+
+                default:
+                    return displayError(`Unknown action: ${action}`);
             }
 
             try {
-                // setLogLevel('Debug'); // Uncomment for debugging
+                // The docRef is already defined from the getDoc operation
+                await updateDoc(docRef, updateData);
+                clearError();
+                console.log(`Device ${deviceId} status updated to: ${newStatus}`);
+            } catch (e) {
+                displayError(`Error updating device: ${e.message}`);
+            }
+        }
+
+        // --- Rendering Logic ---
+
+        function createDeviceCard(device) {
+            const isCheckedOut = device.status === 'checked_out';
+            const isReserved = device.status === 'reserved';
+            const isAvailable = device.status === 'available';
+            
+            const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
+            const isReservedByMe = isReserved && device.reservedBy === userId;
+            
+            // Check if there is a pending reservation (regardless of primary status)
+            const hasPendingReservation = !!device.reservedBy; 
+            const hasPendingReservationByMe = hasPendingReservation && device.reservedBy === userId;
+            
+            // Check for overdue checkout or expired reservation (past current date)
+            const today = new Date().toISOString().split('T')[0];
+            let isPastDue = false;
+            let displayDate = null;
+            
+            if (isCheckedOut) {
+                isPastDue = device.expectedReturnDate && (device.expectedReturnDate < today);
+                displayDate = device.expectedReturnDate;
+            } else if (isReserved) {
+                isPastDue = device.reservationEndDate && (device.reservationEndDate < today);
+                displayDate = device.reservationEndDate;
+            } else if (isCheckedOut && hasPendingReservation) {
+                // Even if checked out, check the reservation end date for relevance
+                displayDate = device.expectedReturnDate; 
+            }
+
+            // Determine status display
+            let statusColor = 'bg-success';
+            let statusText = 'Available';
+            let details = '';
+            
+            // If device is checked out AND has a reservation, show the reservation status in details
+            const reservationDetails = hasPendingReservation 
+                ? `<p class="mt-2 text-info text-xs"><span class="font-bold">Queue:</span> Reserved by ${hasPendingReservationByMe ? 'You' : device.reservedByUserName} until ${device.reservationEndDate}.</p>`
+                : '';
+
+            if (isReserved) {
+                statusColor = isPastDue ? 'bg-warning' : 'bg-info';
+                statusText = isPastDue ? 'RESERVATION EXPIRED' : 'Reserved';
+                details = `
+                    <p><span class="font-semibold">${isReservedByMe ? 'Reserved By You' : 'Reserved By:'}</span> ${device.reservedByUserName || 'Unknown'}</p>
+                    <p><span class="font-semibold">End Date:</span> ${displayDate}</p>
+                `;
+            } else if (isCheckedOut) {
+                statusColor = isPastDue ? 'bg-warning' : 'bg-danger';
+                statusText = isPastDue ? 'OVERDUE' : 'Checked Out';
+                details = `
+                    <p><span class="font-semibold">${isCheckedOutByMe ? 'Checked Out By You' : 'Checked Out By:'}</span> ${device.checkedOutByUserName || 'Unknown'}</p>
+                    ${device.checkedOutByUserEmail ? `<p><span class="font-semibold">Email:</span> ${device.checkedOutByUserEmail}</p>` : ''}
+                    <p><span class="font-semibold">Return Date:</span> ${displayDate}</p>
+                    ${reservationDetails}
+                `;
+            }
+            
+            // --- Button Logic ---
+            const buttonsHtml = [];
+
+            if (isAvailable) {
+                // Available: Show Checkout and Reserve
+                buttonsHtml.push(`
+                    <button data-action="checked_out" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
+                        Check Out
+                    </button>
+                    <!-- Action: reserve_available -->
+                    <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600 ml-2">
+                        Reserve
+                    </button>
+                `);
+            } else if (isCheckedOut) {
+                if (isCheckedOutByMe) {
+                    // Checked Out By Me: Show Check In
+                    buttonsHtml.push(`
+                        <button data-action="check_in" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600">
+                            Check In
+                        </button>
+                    `);
+                } else if (!hasPendingReservation) { 
+                    // Checked Out By Others AND no reservation is queued: Show Reserve for Later
+                    buttonsHtml.push(`
+                        <!-- Action: reserve_queue -->
+                        <button data-action="reserve_queue" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
+                            Reserve for Later
+                        </button>
+                    `);
+                } else {
+                    // Checked Out by Others AND Reservation is Queued: Disabled button
+                    buttonsHtml.push(`
+                        <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
+                            Reservation Queued (${hasPendingReservationByMe ? 'By You' : 'By Other'})
+                        </button>
+                    `);
+                }
+            } else if (isReserved) {
+                // Device is RESERVED (by me or someone else, reserved when available)
+                if (isReservedByMe) {
+                    // Reserved By Me: Show Check Out Now and Cancel Reservation
+                    buttonsHtml.push(`
+                        <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
+                            Check Out Now
+                        </button>
+                        <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
+                            Cancel Reservation
+                        </button>
+                    `);
+                } else {
+                    // Reserved by Others: Show the standard Reserve option. This action will claim the reservation slot, 
+                    // but is now guarded by a date validation check in updateDeviceStatus.
+                    buttonsHtml.push(`
+                        <!-- Action: reserve_available will claim the reservation, replacing the existing one if the date is later. -->
+                        <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
+                            Reserve
+                        </button>
+                    `);
+                }
+            } else {
+                // Fallback: Disabled buttons
+                buttonsHtml.push(`
+                    <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
+                        Unavailable
+                    </button>
+                `);
+            }
+
+            const card = document.createElement('div');
+            card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
+            
+            const statusIndicator = `
+                <span class="w-3 h-3 rounded-full ${statusColor} mr-4 mt-2 flex-shrink-0" aria-label="Device Status"></span>
+                <div class="flex flex-col">
+                    <span class="text-xl font-bold text-gray-800">${device.name}</span>
+                    <span class="text-sm font-medium text-gray-600 flex items-center mb-2">
+                        Status: <span class="ml-1 font-bold ${isReserved ? (isPastDue ? 'text-warning' : 'text-info') : (isCheckedOut ? (isPastDue ? 'text-warning' : 'text-danger') : 'text-success')}">${statusText}</span>
+                    </span>
+                    ${!isAvailable ? `
+                        <div class="text-sm text-gray-600 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
+                            ${details}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            
+            const buttonSection = `
+                <div class="flex mt-3 sm:mt-0">
+                    ${buttonsHtml.join('')}
+                </div>
+            `;
+
+            card.innerHTML = `<div class="flex items-start mb-3 sm:mb-0">${statusIndicator}</div> ${buttonSection}`;
+
+            // Attach event listeners to all action buttons in the card
+            card.querySelectorAll('.action-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const action = button.getAttribute('data-action');
+                    
+                    if (userId === null) {
+                        displayError("Authentication is currently pending. Please wait a moment for the connection to finalize.");
+                        return; 
+                    }
+
+                    if (action === 'check_in') {
+                        const currentUserName = DOM.nameInput.value.trim();
+                        const currentUserEmail = DOM.emailInput.value.trim();
+                        
+                        const requiredUserName = device.checkedOutByUserName;
+                        const requiredUserEmail = device.checkedOutByUserEmail;
+
+                        if (!currentUserName || currentUserName !== requiredUserName ||
+                            !currentUserEmail || currentUserEmail !== requiredUserEmail) {
+                             // Non-revealing error message for Check In
+                             displayError(`To check in "${device.name}", please ensure your full Name and Email match the details used for checkout.`);
+                             return;
+                        }
+                        updateDeviceStatus(device.id, action);
+                    } else if (action === 'cancel_reservation') {
+                        // Security Check: Require name and email verification
+                        const currentUserName = DOM.nameInput.value.trim();
+                        const currentUserEmail = DOM.emailInput.value.trim();
+                        
+                        const requiredUserName = device.reservedByUserName;
+                        const requiredUserEmail = device.reservedByUserEmail;
+
+                        if (!currentUserName || currentUserName !== requiredUserName || 
+                            !currentUserEmail || currentUserEmail !== requiredUserEmail) {
+                             // Non-revealing error message for Cancel Reservation
+                             displayError(`To cancel the reservation for "${device.name}", please confirm your identity by entering the exact Name and Email you used to reserve it.`);
+                             return;
+                        }
+
+                        updateDeviceStatus(device.id, action);
+                    } else if (action === 'checkout_reserved') {
+                        // Security Check: Require name and email verification for Check Out Now
+                        const currentUserName = DOM.nameInput.value.trim();
+                        const currentUserEmail = DOM.emailInput.value.trim();
+                        
+                        const requiredUserName = device.reservedByUserName;
+                        const requiredUserEmail = device.reservedByUserEmail;
+
+                        if (!currentUserName || currentUserName !== requiredUserName || 
+                            !currentUserEmail || currentUserEmail !== requiredUserEmail) {
+                             // Non-revealing error message for Check Out Now
+                             displayError(`To check out "${device.name}" now, please confirm your identity by entering the exact Name and Email you used to reserve it.`);
+                             return;
+                        }
+                        
+                        // If confirmation passes, proceed with 1-Click reserved checkout
+                        updateDeviceStatus(device.id, action, device);
+                    } else if (action === 'checked_out' || action === 'reserve_available' || action === 'reserve_queue') {
+                        // All these actions require form data, and reserve_available/reserve_queue will now handle date checks
+                        updateDeviceStatus(device.id, action);
+                    } // The rest of the logic was missing its closing bracket
+                });
+            });
+            return card;
+        } // Closing the createDeviceCard function
+
+        /**
+         * Clears the current list and renders cards for all devices.
+         * @param {Array<object>} devices 
+         */
+        function renderDeviceList(devices) {
+            currentDevices = devices; // Update global state
+            DOM.list.innerHTML = ''; // Clear existing list
+            DOM.spinner.classList.add('hidden');
+
+            if (devices.length === 0) {
+                DOM.list.innerHTML = `
+                    <div class="text-center p-8 bg-gray-50 rounded-lg shadow-inner">
+                        <p class="text-xl font-medium text-gray-700">No Devices Found</p>
+                        <p class="text-gray-500 mt-2">Please click 'Seed Initial Device Data' to add some demo devices.</p>
+                        <p class="text-xs text-gray-400 mt-2">Authenticated User ID: ${userId || 'N/A'}</p>
+                    </div>
+                `;
+                DOM.seedContainer.classList.remove('hidden');
+            } else {
+                devices.forEach(device => {
+                    DOM.list.appendChild(createDeviceCard(device));
+                });
+            }
+        }
+
+        /**
+         * Sets up the real-time listener for the devices collection.
+         */
+        function listenForDevices() {
+            if (!devicesCollectionRef) return;
+            
+            // Query for all documents in the collection
+            const q = query(devicesCollectionRef);
+
+            // Set up the real-time listener
+            onSnapshot(q, (querySnapshot) => {
+                const devices = [];
+                querySnapshot.forEach((doc) => {
+                    // Extract device data, ensuring the document ID is included
+                    devices.push({ id: doc.id, ...doc.data() });
+                });
+                renderDeviceList(devices);
+            }, (error) => {
+                displayError(`Real-time database error: ${error.message}`);
+                DOM.spinner.classList.add('hidden');
+            });
+        }
+        
+        /**
+         * Initializes Firebase and authenticates the user.
+         */
+        async function setupFirebase() {
+            try {
+                // Configure Firebase logging for better debugging
+                setLogLevel('Debug');
+                
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
+                
+                // Set persistence to session to maintain login state during refresh
+                await setPersistence(auth, browserSessionPersistence);
 
-                // Authenticate the user
+                // Determine the correct collection path using the provided app ID
+                // Public data path: /artifacts/{appId}/public/data/devices
+                devicesCollectionRef = collection(db, `artifacts/${appId}/public/data/devices`);
+
+                // Sign in using the custom token if provided, otherwise sign in anonymously
                 if (initialAuthToken) {
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
                 }
 
+                // Wait for auth state to stabilize
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        currentUserId = user.uid;
-                        userIdDisplay.textContent = currentUserId;
-                        // Once authenticated, start listening for data
-                        setupReservationListener();
+                        userId = user.uid;
+                        console.log(`Firebase Initialized. User ID: ${userId}`);
+                        listenForDevices(); // Start listening for data once authenticated
                     } else {
-                        currentUserId = 'anonymous';
-                        userIdDisplay.textContent = 'Anonymous (Data will be private)';
-                        showMessage("Authentication failed. Using anonymous ID.", true);
+                        userId = null;
+                        displayError("Authentication failed or is not available.");
+                        DOM.spinner.classList.add('hidden');
                     }
                 });
-            } catch (error) {
-                console.error("Error initializing Firebase:", error);
-                showMessage(`Firebase initialization failed: ${error.message}`, true);
-            }
-        }
-
-        /**
-         * 2. Adds a new reservation to Firestore.
-         * There are no arbitrary limits here; it will add a document every time it's called.
-         */
-        async function addReservation(name, date, time) {
-            if (!db) {
-                showMessage("Database not initialized. Please wait.", true);
-                return;
-            }
-
-            const reservationRef = collection(
-                db,
-                // Using a public data path for a shared reservation list
-                `artifacts/${appId}/public/data/reservations`
-            );
-
-            try {
-                const newReservation = {
-                    name: name,
-                    reservationDate: date,
-                    reservationTime: time,
-                    createdAt: serverTimestamp(),
-                    userId: currentUserId,
-                    // Combine date and time into an ISO string for easy future sorting/filtering
-                    dateTimeISO: `${date}T${time}:00`
-                };
-
-                // Add the document. This is the core action that allows for unlimited reservations.
-                await addDoc(reservationRef, newReservation);
-
-                showMessage("Reservation successfully booked!");
-                form.reset();
 
             } catch (e) {
-                console.error("Error adding reservation: ", e);
-                showMessage(`Error booking reservation: ${e.message}`, true);
+                displayError(`Firebase setup failed: ${e.message}`);
+                DOM.spinner.classList.add('hidden');
             }
         }
 
-        // 3. Set up real-time listener for reservations
-        function setupReservationListener() {
-            const reservationRef = collection(
-                db,
-                `artifacts/${appId}/public/data/reservations`
-            );
+        // --- Event Listeners and Initial Call ---
 
-            // Filter out reservations that are in the past and sort by date/time
-            const nowISO = new Date().toISOString().slice(0, 16);
-            const q = query(
-                reservationRef,
-                // Only show future reservations
-                where("dateTimeISO", ">=", nowISO)
-            );
-
-            // Use onSnapshot for real-time updates
-            onSnapshot(q, (snapshot) => {
-                loadingIndicator.classList.add('hidden');
-                reservationsListContainer.innerHTML = ''; // Clear existing list
-
-                if (snapshot.empty) {
-                    reservationsListContainer.innerHTML = `
-                        <p class="text-center text-gray-500 p-8 bg-gray-50 rounded-lg">
-                            No future reservations found. Book one above!
-                        </p>
-                    `;
-                    return;
-                }
-
-                snapshot.docs.forEach(doc => {
-                    const data = doc.data();
-                    const reservationItem = document.createElement('div');
-                    const isOwner = data.userId === currentUserId;
-
-                    reservationItem.className = `
-                        flex justify-between items-center p-4 rounded-lg shadow-md transition duration-200
-                        ${isOwner ? 'bg-indigo-100 border-l-4 border-primary' : 'bg-white border'}
-                    `;
-
-                    // Format date for display
-                    const dateObj = new Date(data.dateTimeISO);
-                    const formattedDate = dateObj.toLocaleDateString(undefined, {
-                        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric'
-                    });
-                    const formattedTime = dateObj.toLocaleTimeString(undefined, {
-                        hour: '2-digit', minute: '2-digit'
-                    });
-
-                    reservationItem.innerHTML = `
-                        <div>
-                            <p class="text-lg font-bold text-gray-800">${data.name}</p>
-                            <p class="text-sm text-gray-600">${formattedDate} at ${formattedTime}</p>
-                            ${isOwner ? '<span class="text-xs text-primary font-medium"> (Your Reservation)</span>' : ''}
-                        </div>
-                        <button data-doc-id="${doc.id}"
-                                class="delete-btn text-red-500 hover:text-red-700 font-semibold text-sm py-1 px-3 rounded transition duration-200 ${isOwner ? 'hover:bg-red-100' : 'opacity-50 cursor-not-allowed'}"
-                                ${isOwner ? '' : 'disabled'}>
-                            Cancel
-                        </button>
-                    `;
-                    reservationsListContainer.appendChild(reservationItem);
-                });
-
-                // Attach delete event listeners
-                reservationsListContainer.querySelectorAll('.delete-btn').forEach(button => {
-                    button.addEventListener('click', handleDeleteReservation);
-                });
-            }, (error) => {
-                console.error("Error setting up reservation listener:", error);
-                loadingIndicator.classList.add('hidden');
-                reservationsListContainer.innerHTML = `<p class="text-red-500">Error loading data: ${error.message}</p>`;
-            });
-        }
-
-        async function handleDeleteReservation(event) {
-            if (!db) return;
-            const docId = event.target.getAttribute('data-doc-id');
-            if (!docId) return;
-
-            // Simple confirmation message display (not a blocking prompt)
-            if (!confirm("Are you sure you want to cancel this reservation?")) {
-                return;
-            }
-
-            const docRef = doc(db, `artifacts/${appId}/public/data/reservations`, docId);
-            try {
-                await deleteDoc(docRef);
-                showMessage("Reservation cancelled successfully!");
-            } catch (e) {
-                console.error("Error deleting reservation: ", e);
-                showMessage(`Error cancelling reservation: ${e.message}`, true);
-            }
-        }
-
-        // 4. Form Submission Handler
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            const name = document.getElementById('name').value.trim();
-            const date = document.getElementById('date').value;
-            const time = document.getElementById('time').value;
-
-            // Simple date validation to prevent past reservations
-            const reservationDateTime = new Date(`${date}T${time}:00`);
-            if (reservationDateTime <= new Date()) {
-                showMessage("Please select a date and time in the future.", true);
-                return;
-            }
-
-            addReservation(name, date, time);
-        });
+        DOM.seedButton.addEventListener('click', seedInitialData);
+        DOM.clearButton.addEventListener('click', deleteAllDevices);
 
         // Start the application
-        window.onload = initializeFirebase;
+        setupFirebase();
 
     </script>
 </body>
 </html>
+
 
 
