@@ -89,7 +89,7 @@
         // --- CONFIGURATION FOR EXTERNAL HOSTING ---
         // This object has been replaced with your actual configuration keys.
         const EXTERNAL_FIREBASE_CONFIG = {
-          apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
+          apiKey: "AIzaSyB52DNsoD0DutAWJCnQYwpBqwB0CM",
           authDomain: "device-checkout-system.firebaseapp.com",
           projectId: "device-checkout-system",
           storageBucket: "device-checkout-system.firebasestorage.app",
@@ -123,6 +123,7 @@
 
         let db, auth, userId = null;
         let devicesCollectionRef = null;
+        let currentDevices = []; // NEW: Store the current state of devices for validation
         
         // --- Utility Functions ---
 
@@ -161,6 +162,18 @@
                 const userInfo = getUserInfo();
                 if (!userInfo) return; // Error handled by getUserInfo
                 
+                // NEW VALIDATION: Check if this return date is already in use by another device
+                const blockedDevice = currentDevices.find(d => 
+                    d.id !== deviceId && // Ignore the device being checked out
+                    d.status === 'checked_out' && // Only check devices currently checked out
+                    d.expectedReturnDate === userInfo.returnDate // Check for date conflict
+                );
+
+                if (blockedDevice) {
+                    displayError(`The return date ${userInfo.returnDate} is already reserved by another device (${blockedDevice.name}). Please select a different date.`);
+                    return;
+                }
+
                 updateData.checkedOutBy = userId;
                 updateData.checkedOutByUserName = userInfo.name;
                 updateData.checkedOutByUserEmail = userInfo.email;
@@ -174,12 +187,6 @@
                 updateData.checkedOutByUserEmail = null;
                 updateData.expectedReturnDate = null; // Clear new field
                 updateData.checkedOutAt = null;
-                
-                // Note: We intentionally DO NOT clear the local form fields here, 
-                // as the user's name is kept for the next check-out or check-in confirmation.
-                // DOM.nameInput.value = '';
-                // DOM.emailInput.value = '';
-                // DOM.returnDateInput.value = '';
             }
 
             try {
@@ -223,7 +230,6 @@
                     ${isCheckedOut ? `
                         <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
                             <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'N/A'}</p>
-                            <!-- Expected Return Date and Email are intentionally hidden for privacy and simplicity -->
                         </div>
                     ` : ''}
                 </div>
@@ -248,7 +254,7 @@
                 if (!userId) return displayError("Authentication is pending. Please wait or refresh.");
 
                 if (isCheckedOutByMe) {
-                    // Case 1: Check In (NEW NAME CONFIRMATION LOGIC)
+                    // Case 1: Check In (NAME CONFIRMATION LOGIC)
                     const currentUserName = DOM.nameInput.value.trim();
                     const requiredUserName = device.checkedOutByUserName;
 
@@ -266,7 +272,7 @@
                     }
 
                 } else if (!isCheckedOut) {
-                    // Case 2: Check Out (Device is available)
+                    // Case 2: Check Out (Device is available) - Date validation happens inside updateDeviceStatus
                     updateDeviceStatus(device.id, 'checked_out');
                 } else {
                     // Case 3: Attempting to Check Out a device that is already checked out by someone else
@@ -374,6 +380,7 @@
                     ...doc.data(),
                 }));
 
+                currentDevices = devices; // IMPORTANT: Update the global state
                 renderDeviceList(devices);
             }, (err) => {
                 displayError(`Real-time Listener Error: ${err.message}`);
