@@ -29,11 +29,8 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8">
     <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
-        <h1 class="text-4xl font-extrabold text-gray-800 mb-2">Device Checkout Hub</h1>
-        <!-- Re-adding the visible user-info/connection status area -->
-        <p id="user-info" class="text-sm text-gray-500 mb-6 border-b pb-4">
-            <span class="font-semibold text-primary">Connecting...</span>
-        </p>
+        <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">Device Checkout Hub</h1>
+        <!-- Removed the visible user-info/connection status area (id="user-info") -->
 
         <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 rounded-lg" role="alert"></div>
         
@@ -118,7 +115,7 @@
         }
         
         const DOM = {
-            info: document.getElementById('user-info'), // Re-added DOM element
+            // Removed DOM.info
             error: document.getElementById('error-message'),
             list: document.getElementById('device-list'),
             spinner: document.getElementById('loading-spinner'),
@@ -172,7 +169,7 @@
 
                 updateData.checkedOutBy = userId;
                 updateData.checkedOutByUserName = userInfo.name;
-                updateData.checkedOutByUserEmail = userInfo.email;
+                // updateData.checkedOutByUserEmail = userInfo.email; // Kept email in database for admin/check-in logic
                 updateData.expectedReturnDate = userInfo.returnDate; // New field
                 updateData.checkedOutAt = new Date().toISOString();
                 
@@ -213,9 +210,6 @@
             card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
             
             // Expected Return Date removed from public display per previous request
-            // const dateDisplay = device.expectedReturnDate 
-            //     ? new Date(device.expectedReturnDate).toLocaleDateString()
-            //     : 'N/A';
                 
             const statusIndicator = `
                 <span class="w-3 h-3 rounded-full ${statusColor} mr-4 mt-2 flex-shrink-0" aria-label="Device Status"></span>
@@ -249,8 +243,8 @@
             // Attach click handler
             const button = card.querySelector(`#btn-${device.id}`);
             button.addEventListener('click', () => {
-                // This version of the code displayed the error "Not signed in" because the userId was null
-                if (!userId) return displayError("App is initializing. Please wait or refresh.");
+                // Now only checks for a connection/initialization error, not based on visible UI status
+                if (!userId) return displayError("Authentication is pending. Please wait a moment.");
 
                 if (isCheckedOutByMe) {
                     // Case 1: Check In (NAME CONFIRMATION LOGIC)
@@ -292,9 +286,8 @@
             if (devices.length === 0) {
                 const message = document.createElement('p');
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
-                message.textContent = userId 
-                    ? "No devices found in the system. Add devices via the Firestore console."
-                    : "Waiting for authentication..."; // This line generated the "Waiting for authentication" message
+                // Simplified message: Now it just says no devices found, regardless of auth status.
+                message.textContent = "No devices found in the system. Add devices via the Firestore console."; 
                 DOM.list.appendChild(message);
                 return;
             }
@@ -350,10 +343,6 @@
 
                 // Set up Auth State Observer
                 onAuthStateChanged(auth, (user) => {
-                    // The bug was that the spinner was removed here in the old version, which caused a race condition.
-                    // const spinner = document.getElementById('loading-spinner');
-                    // if(spinner) spinner.remove();
-
                     if (user) {
                         userId = user.uid;
                         // For debugging purposes only
@@ -363,17 +352,18 @@
                         const collectionPath = `artifacts/${appId}/public/data/devices`;
                         devicesCollectionRef = collection(db, collectionPath);
                         
-                        // Re-added user info display
-                        DOM.info.innerHTML = `<span class="font-semibold text-primary">User ID:</span> ${userId}`;
+                        // Removed DOM.info update
                         clearError();
                         
                         // Start real-time data listener
                         startRealtimeListener();
                     } else {
                         userId = null;
-                        // Re-added "Not signed in" display
-                        DOM.info.innerHTML = `<span class="font-semibold text-danger">Not signed in. Cannot interact with devices.</span>`;
-                        renderDeviceList([]); // Render an empty list if not signed in
+                        // Removed DOM.info update
+                        // If auth fails, stop spinner and show empty state message
+                        const spinner = document.getElementById('loading-spinner');
+                        if(spinner) spinner.remove();
+                        renderDeviceList([]);
                     }
                 });
 
