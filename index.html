@@ -1,564 +1,343 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Device Check-Out / Check-In System</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; background-color: #f8f9fa; }
-        .card { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1); }
-        /* Custom scrollbar for history */
-        .history-list::-webkit-scrollbar { width: 6px; }
-        .history-list::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
-    </style>
-    <script type="module">
-        // Firebase imports for HTML
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            setDoc, 
-            updateDoc, 
-            onSnapshot, 
-            collection,
-            query, 
-            orderBy,
-            serverTimestamp,
-            setLogLevel,
-            runTransaction
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        // IMPORTANT: Log level set to debug for firestore
-        setLogLevel('Debug');
-        
-        let db;
-        let auth;
-        let userId = null;
-        let currentCheckoutId = null; // To track the document ID of the current checkout history record
-
-
-        // --- CONFIGURATION: USE GLOBAL ENVIRONMENT VARIABLES ---
-        // Retrieve config and app ID from global variables
-        // Added a check for existence and a safe fallback to an empty object {}
-        const firebaseConfig = (typeof __firebase_config !== 'undefined' && __firebase_config) 
-            ? JSON.parse(__firebase_config) 
-            : {}; 
-        // THIS MUST MATCH THE PATH USED IN THE FIRESTORE SECURITY RULES (e.g., 'external-device-tracker')
-        const appId = typeof __app_id !== 'undefined' 
-            ? __app_id 
-            : 'external-device-tracker'; // Fallback for testing 
-
-        // Firestore Paths are constructed using the static appId
-        const DEVICE_STATUS_PATH = `/artifacts/${appId}/public/data/device_status/status`;
-        const CHECKOUT_COLLECTION_PATH = `/artifacts/${appId}/public/data/device_checkouts`;
-        // --- END CONFIGURATION ---
-
-
-        // --- Utility Functions ---
-
-        /**
-         * Clears all fields in the checkout form.
-         */
-        function clearForm() {
-            document.getElementById('checkout-name').value = '';
-            document.getElementById('checkout-email').value = '';
-            document.getElementById('expected-return-date').value = '';
-            document.getElementById('message-box').classList.add('hidden');
-        }
-
-        /**
-         * Shows a message in the UI's message box.
-         * @param {string} message 
-         * @param {string} type 'success', 'error', or 'info'
-         */
-        function showMessage(message, type = 'info') {
-            const msgBox = document.getElementById('message-box');
-            msgBox.textContent = message;
-            // Ensure classes are cleared before re-applying
-            msgBox.classList.remove('hidden', 'bg-red-100', 'text-red-800', 'bg-green-100', 'text-green-800', 'bg-blue-100', 'text-blue-800');
-            
-            switch(type) {
-                case 'error':
-                    msgBox.classList.add('bg-red-100', 'text-red-800');
-                    break;
-                case 'success':
-                    msgBox.classList.add('bg-green-100', 'text-green-800');
-                    break;
-                case 'info':
-                default:
-                    msgBox.classList.add('bg-blue-100', 'text-blue-800');
-            }
-
-            // Set a timeout to clear the message
-            setTimeout(() => {
-                msgBox.classList.add('hidden');
-            }, 5000);
-        }
-
-        // --- Core Firebase Logic ---
-
-        /**
-         * Initializes Firebase and authenticates the user.
-         */
-        async function initFirebase() {
-            try {
-                // Check if firebaseConfig is null or an empty object (which it would be if the global variable was missing)
-                if (!firebaseConfig || Object.keys(firebaseConfig).length === 0) {
-                    showMessage("Error: Firebase configuration is missing or empty. Please ensure the required environment variables are set.", 'error');
-                    return;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Persistent To-Do List</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Configure Tailwind to use Inter font and custom colors -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    colors: {
+                        'primary-500': '#4f46e5',
+                        'primary-600': '#4338ca',
+                    }
                 }
+            }
+        }
+    </script>
+    <style>
+        /* Custom scrollbar for better aesthetics */
+        body::-webkit-scrollbar {
+            width: 8px;
+        }
+        body::-webkit-scrollbar-thumb {
+            background-color: #9ca3af;
+            border-radius: 4px;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .task-enter {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        .task-enter-active {
+            opacity: 1;
+            transform: translateY(0);
+            transition: opacity 300ms, transform 300ms;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen p-4 sm:p-8">
+    <div class="max-w-xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
+        <h1 class="text-4xl font-extrabold text-gray-800 mb-2">Persistent To-Do List</h1>
+        <p id="user-info" class="text-sm text-gray-500 mb-6 border-b pb-4">
+            <span class="font-semibold text-primary-500">Connecting...</span>
+        </p>
 
-                const app = initializeApp(firebaseConfig);
-                db = getFirestore(app);
-                auth = getAuth(app);
+        <div id="error-message" class="hidden p-4 mb-4 text-sm text-red-700 bg-red-100 rounded-lg" role="alert"></div>
 
-                // Use custom token if available, otherwise sign in anonymously
-                if (typeof __initial_auth_token !== 'undefined') {
-                    await signInWithCustomToken(auth, __initial_auth_token);
+        <form id="add-task-form" class="flex gap-3 mb-8">
+            <input
+                type="text"
+                id="new-task-input"
+                placeholder="What needs to be done?"
+                class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-primary-500 focus:border-primary-500 transition duration-150 disabled:bg-gray-50"
+                disabled
+                aria-label="New task input"
+            />
+            <button
+                type="submit"
+                id="add-task-button"
+                class="bg-primary-500 text-white p-3 rounded-lg shadow-md hover:bg-primary-600 transition duration-150 transform hover:scale-105 disabled:bg-primary-400 flex items-center justify-center"
+                disabled
+                aria-label="Add task"
+            >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-0 sm:mr-1">
+                    <circle cx="12" cy="12" r="10"/><path d="M12 8v8M8 12h8"/>
+                </svg>
+                <span class="hidden sm:inline">Add Task</span>
+            </button>
+        </form>
+
+        <ul id="todo-list" class="space-y-3">
+            <li id="loading-spinner" class="flex justify-center items-center py-10">
+                <svg class="animate-spin h-8 w-8 text-primary-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Firebase SDK Imports and Logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot, addDoc, updateDoc, deleteDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // UI elements
+        const userInfoEl = document.getElementById('user-info');
+        const errorEl = document.getElementById('error-message');
+        const listEl = document.getElementById('todo-list');
+        const formEl = document.getElementById('add-task-form');
+        const inputEl = document.getElementById('new-task-input');
+        const buttonEl = document.getElementById('add-task-button');
+        const loadingSpinner = document.getElementById('loading-spinner');
+
+        let db, auth, userId = null;
+        let todoCollectionRef = null;
+
+        // --- Utility Functions ---
+
+        function displayError(message) {
+            console.error(message);
+            errorEl.textContent = message;
+            errorEl.classList.remove('hidden');
+        }
+
+        function clearError() {
+            errorEl.classList.add('hidden');
+            errorEl.textContent = '';
+        }
+
+        function enableInput(enabled) {
+            inputEl.disabled = !enabled;
+            buttonEl.disabled = !enabled;
+            if (enabled) {
+                buttonEl.classList.remove('disabled:bg-primary-400');
+            } else {
+                buttonEl.classList.add('disabled:bg-primary-400');
+            }
+        }
+
+        // --- Core Firebase Initialization ---
+
+        async function initFirebase() {
+            if (!firebaseConfig) {
+                displayError("Firebase configuration is missing.");
+                return;
+            }
+
+            try {
+                setLogLevel('Debug'); // Enable debug logging for Firebase
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                userInfoEl.innerHTML = `<span class="font-semibold text-primary-500">Authenticating...</span>`;
+                
+                // 1. Authenticate the user
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
                 } else {
                     await signInAnonymously(auth);
                 }
 
-                // Wait for auth state to be ready
-                onAuthStateChanged(auth, (user) => {
-                    if (user) {
-                        userId = user.uid;
-                        document.getElementById('user-id-display').textContent = `User ID: ${userId}`;
-                        setupRealtimeListeners();
-                        // Initialize the device status if it doesn't exist
-                        initializeDeviceStatus(); 
-                    } else {
-                        console.log("User signed out or failed to sign in.");
-                    }
-                });
+                // 2. Set up auth state observer
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        // MANDATORY Firestore path for private user data
+                        const collectionPath = `artifacts/${appId}/users/${userId}/todos`;
+                        todoCollectionRef = collection(db, collectionPath);
+                        
+                        userInfoEl.innerHTML = `<span class="font-semibold text-primary-500">User ID:</span> ${userId}`;
+                        enableInput(true);
+                        clearError();
+                        
+                        // 3. Start real-time listener after successful auth
+                        startRealtimeListener();
 
-            } catch (error) {
-                console.error("Firebase initialization or sign-in failed:", error);
-                let errorMessage = `Firebase connection error: ${error.message}`;
-                if (error.code === 'auth/configuration-not-found' || error.code === 'app/invalid-credential') {
-                     errorMessage = "Configuration Error: Please verify your Firebase settings (or Canvas setup).";
-                }
-                showMessage(errorMessage, 'error');
-            }
-        }
+                    } else {
+                        userId = null;
+                        userInfoEl.innerHTML = `<span class="font-semibold text-red-500">Not signed in. Cannot save data.</span>`;
+                        enableInput(false);
+                    }
+                });
 
-        /**
-         * Ensures the single device status document exists in Firestore.
-         */
-        async function initializeDeviceStatus() {
-            if (!db) return;
-            try {
-                const statusRef = doc(db, DEVICE_STATUS_PATH);
-                // We use setDoc with merge: true to create the document if it doesn't exist,
-                // without overwriting existing fields.
-                await setDoc(statusRef, {
-                    isAvailable: true,
-                    currentCheckout: null,
-                    lastUpdated: serverTimestamp()
-                }, { merge: true });
-                console.log("Device status document initialized/verified.");
-            } catch (error) {
-                console.error("Error initializing device status:", error);
-            }
-        }
+            } catch (e) {
+                displayError(`Firebase initialization or authentication failed: ${e.message}`);
+                loadingSpinner.remove();
+            }
+        }
 
-        /**
-         * Sets up real-time listeners for device status and history.
-         */
-        function setupRealtimeListeners() {
-            if (!db || !userId) return;
+        // --- Firestore Operations ---
 
-            // 1. Listen to the single device status document
-            const statusRef = doc(db, DEVICE_STATUS_PATH);
-            onSnapshot(statusRef, (docSnap) => {
-                if (docSnap.exists()) {
-                    updateStatusUI(docSnap.data());
-                } else {
-                    // This should only happen if the initialization failed or document was deleted
-                    console.error("Device status document does not exist.");
-                    // Attempt to re-initialize if it's missing
-                    initializeDeviceStatus();
-                    updateStatusUI({ isAvailable: true, currentCheckout: null });
-                }
-            }, (error) => {
-                console.error("Error listening to device status:", error);
-                showMessage(`Failed to load device status: ${error.message}`, 'error');
-            });
+        function startRealtimeListener() {
+            if (!todoCollectionRef) return;
 
-            // 2. Listen to the checkout history collection
-            const checkoutsRef = collection(db, CHECKOUT_COLLECTION_PATH);
-            // Query to fetch history, ordered by checkout date
-            const q = query(checkoutsRef, orderBy("checkoutDate", "desc"));
+            const todosQuery = query(todoCollectionRef);
 
-            onSnapshot(q, (snapshot) => {
-                const historyData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                updateHistoryUI(historyData);
-            }, (error) => {
-                console.error("Error listening to history:", error);
-                showMessage(`Failed to load history: ${error.message}`, 'error');
-            });
-        }
+            onSnapshot(todosQuery, (snapshot) => {
+                loadingSpinner.remove();
+                
+                const todos = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data(),
+                }));
 
-        // --- UI Update Functions ---
+                renderTodoList(todos.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt)));
 
-        /**
-         * Updates the main status card based on the current status data.
-         * @param {Object} statusData 
-         */
-        function updateStatusUI(statusData) {
-            const statusCard = document.getElementById('status-card');
-            const statusText = document.getElementById('status-text');
-            const statusLight = document.getElementById('status-light');
-            const currentHolder = document.getElementById('current-holder-info');
-            const checkinSection = document.getElementById('checkin-section');
-            const checkoutForm = document.getElementById('checkout-form');
-            
-            const isAvailable = statusData.isAvailable;
-            const checkout = statusData.currentCheckout;
+            }, (err) => {
+                displayError(`Real-time data error: ${err.message}`);
+            });
+        }
 
-            statusCard.classList.remove('bg-green-50', 'border-green-400', 'bg-red-50', 'border-red-400', 'bg-gray-50', 'border-gray-400');
-            statusLight.classList.remove('bg-green-500', 'bg-red-500', 'bg-gray-500');
+        async function addTask(text) {
+            if (!todoCollectionRef || !text.trim()) return;
+            try {
+                await addDoc(todoCollectionRef, {
+                    text: text.trim(),
+                    completed: false,
+                    createdAt: new Date().toISOString(),
+                });
+                inputEl.value = ''; // Clear input on success
+            } catch (e) {
+                displayError(`Error adding task: ${e.message}`);
+            }
+        }
 
-            currentHolder.innerHTML = '';
-            currentCheckoutId = null;
+        async function toggleComplete(id, currentStatus) {
+            if (!todoCollectionRef) return;
+            try {
+                const docRef = doc(db, todoCollectionRef.path, id);
+                await updateDoc(docRef, {
+                    completed: !currentStatus
+                });
+            } catch (e) {
+                displayError(`Error updating task: ${e.message}`);
+            }
+        }
 
-            if (isAvailable) {
-                // Available State
-                statusCard.classList.add('bg-green-50', 'border-green-400');
-                statusLight.classList.add('bg-green-500');
-                statusText.innerHTML = '<span class="text-green-600 font-bold">AVAILABLE</span>';
-                currentHolder.textContent = 'The device is ready for check-out.';
-                checkinSection.classList.add('hidden');
-                checkoutForm.classList.remove('hidden');
-            } else if (checkout) {
-                // Checked Out State
-                statusCard.classList.add('bg-red-50', 'border-red-400');
-                statusLight.classList.add('bg-red-500');
-                statusText.innerHTML = '<span class="text-red-600 font-bold">CHECKED OUT</span>';
-                
-                const returnDate = checkout.expectedReturnDate || 'N/A';
-                
-                // Robust check for null/undefined and function existence to prevent 'toDate' error
-                const checkoutDate = checkout.checkoutDate;
-                const checkoutTimeStr = (checkoutDate && typeof checkoutDate.toDate === 'function') 
-                    ? new Date(checkoutDate.toDate()).toLocaleString() 
-                    : 'Awaiting Server Timestamp';
+        async function deleteTask(id) {
+            if (!todoCollectionRef) return;
+            try {
+                const docRef = doc(db, todoCollectionRef.path, id);
+                await deleteDoc(docRef);
+            } catch (e) {
+                displayError(`Error deleting task: ${e.message}`);
+            }
+        }
 
-                currentHolder.innerHTML = `
-                    <p>Checked out by: <span class="font-semibold">${checkout.name}</span> (${checkout.email})</p>
-                    <p>Expected return: <span class="font-semibold">${returnDate}</span></p>
-                    <p class="text-xs text-gray-500 mt-2">Checked out on: ${checkoutTimeStr}</p>
-                `;
-                currentCheckoutId = checkout.historyDocId; // Set the document ID for check-in
+        // --- UI Rendering ---
 
-                checkinSection.classList.remove('hidden');
-                checkoutForm.classList.add('hidden');
+        function createTodoItem(todo) {
+            const li = document.createElement('li');
+            li.id = `todo-${todo.id}`;
+            li.className = `flex items-center justify-between p-4 rounded-lg shadow-sm transition duration-200 task-enter-active ${
+                todo.completed ? 'bg-green-50 border-l-4 border-green-400' : 'bg-white border-l-4 border-gray-200 hover:shadow-md'
+            }`;
 
-                // Check if the current user is the one who checked it out
-                const isCurrentUser = checkout.checkedOutByUserId === userId;
-                document.getElementById('checkin-button').disabled = !isCurrentUser;
-                document.getElementById('checkin-button').textContent = isCurrentUser 
-                    ? 'Check In Device' 
-                    : 'Only the original user can check in';
-                document.getElementById('checkin-button').classList.toggle('bg-gray-300', !isCurrentUser);
-                document.getElementById('checkin-button').classList.toggle('bg-blue-600', isCurrentUser);
+            li.innerHTML = `
+                <span
+                    class="flex-grow text-lg ${
+                        todo.completed ? 'line-through text-gray-500' : 'text-gray-800'
+                    } break-words cursor-pointer"
+                    aria-label="${todo.text}"
+                >
+                    ${todo.text}
+                </span>
 
-            } else {
-                // Fallback for an unknown or transitioning state (shouldn't happen with init)
-                statusCard.classList.add('bg-gray-50', 'border-gray-400');
-                statusLight.classList.add('bg-gray-500');
-                statusText.innerHTML = '<span class="text-gray-600 font-bold">STATUS UNKNOWN</span>';
-                currentHolder.textContent = 'Awaiting status update...';
-                checkinSection.classList.add('hidden');
-                checkoutForm.classList.add('hidden');
-            }
-        }
+                <div class="flex space-x-2 ml-4">
+                    <button
+                        class="toggle-btn p-2 rounded-full transition duration-150 ${
+                            todo.completed
+                                ? 'text-gray-400 hover:text-green-600'
+                                : 'text-green-600 hover:text-green-700 hover:bg-green-100'
+                        }"
+                        data-id="${todo.id}"
+                        data-status="${todo.completed}"
+                        aria-label="${todo.completed ? "Mark as incomplete" : "Mark as complete"}"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <path d="M9 11l3 3L22 4"/>
+                        </svg>
+                    </button>
+                    <button
+                        class="delete-btn p-2 rounded-full text-red-500 hover:bg-red-100 hover:text-red-600 transition duration-150"
+                        data-id="${todo.id}"
+                        aria-label="Delete task"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6">
+                            <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+            
+            // Attach event listeners to the new elements
+            li.querySelector('.toggle-btn').addEventListener('click', (e) => {
+                const id = e.currentTarget.getAttribute('data-id');
+                const status = e.currentTarget.getAttribute('data-status') === 'true';
+                toggleComplete(id, status);
+            });
 
-        /**
-         * Updates the historical log list.
-         * @param {Array<Object>} historyData 
-         */
-        function updateHistoryUI(historyData) {
-            const historyList = document.getElementById('history-list');
-            historyList.innerHTML = '';
+            li.querySelector('.delete-btn').addEventListener('click', (e) => {
+                deleteTask(e.currentTarget.getAttribute('data-id'));
+            });
 
-            if (historyData.length === 0) {
-                historyList.innerHTML = '<p class="text-center text-gray-500 p-4">No check-out history recorded yet.</p>';
-                return;
-            }
+            li.querySelector('span').addEventListener('click', (e) => {
+                const id = li.querySelector('.toggle-btn').getAttribute('data-id');
+                const status = li.querySelector('.toggle-btn').getAttribute('data-status') === 'true';
+                toggleComplete(id, status);
+            });
 
-            historyData.forEach(item => {
-                // Robust check for null/undefined and function existence
-                const checkoutDate = item.checkoutDate;
-                const checkinDate = item.checkinDate;
+            return li;
+        }
 
-                const checkoutTime = (checkoutDate && typeof checkoutDate.toDate === 'function') 
-                    ? checkoutDate.toDate().toLocaleString() 
-                    : 'N/A';
-                const checkinTime = (checkinDate && typeof checkinDate.toDate === 'function') 
-                    ? checkinDate.toDate().toLocaleString() 
-                    : 'Pending';
-                
-                const listItem = document.createElement('div');
-                listItem.className = 'p-3 border-b border-gray-100 last:border-b-0 flex justify-between items-start';
-                listItem.innerHTML = `
-                    <div>
-                        <p class="font-semibold text-gray-800">${item.name} <span class="text-xs text-gray-500">(${item.email})</span></p>
-                        <p class="text-sm text-blue-600 mt-1">Check Out: ${checkoutTime}</p>
-                        <p class="text-sm ${item.checkinDate ? 'text-green-600' : 'text-orange-500'}">Check In: ${checkinTime}</p>
-                        ${item.expectedReturnDate ? `<p class="text-xs text-gray-500 mt-1">Expected: ${item.expectedReturnDate}</p>` : ''}
-                    </div>
-                    <div class="text-right">
-                        <span class="text-xs font-medium px-2 py-0.5 rounded-full 
-                            ${item.checkinDate ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}">
-                            ${item.checkinDate ? 'RETURNED' : 'ACTIVE'}
-                        </span>
-                    </div>
-                `;
-                historyList.appendChild(listItem);
-            });
-        }
+        function renderTodoList(todos) {
+            listEl.innerHTML = ''; // Clear existing list
+            
+            if (todos.length === 0) {
+                const emptyMessage = document.createElement('p');
+                emptyMessage.className = 'text-center text-gray-500 py-10 italic';
+                emptyMessage.textContent = userId ? "No tasks yet! Add one above." : "Waiting for connection...";
+                listEl.appendChild(emptyMessage);
+                return;
+            }
 
-        // --- Action Handlers ---
+            todos.forEach(todo => {
+                listEl.appendChild(createTodoItem(todo));
+            });
+        }
 
-        /**
-         * Handles the device check-out process.
-         * Enforces the single-device rule using a Firestore Transaction.
-         * @param {Event} e 
-         */
-        async function handleCheckout(e) {
-            e.preventDefault();
+        // --- Event Listeners ---
 
-            const name = document.getElementById('checkout-name').value.trim();
-            const email = document.getElementById('checkout-email').value.trim();
-            const expectedReturnDate = document.getElementById('expected-return-date').value;
+        formEl.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const text = inputEl.value;
+            if (text.trim() && userId) {
+                addTask(text);
+            }
+        });
 
-            if (!name || !email || !expectedReturnDate) {
-                showMessage("Please fill in your Name, Email, and Expected Return Date.", 'error');
-                return;
-            }
+        // Initialize on window load
+        window.onload = initFirebase;
 
-            if (!db || !userId) {
-                showMessage("System not initialized. Please wait.", 'error');
-                return;
-            }
-
-            const statusRef = doc(db, DEVICE_STATUS_PATH);
-            const historyCollectionRef = collection(db, CHECKOUT_COLLECTION_PATH);
-
-            try {
-                document.getElementById('checkout-button').disabled = true;
-
-                // CRITICAL: Use runTransaction to make status check and history write atomic
-                await runTransaction(db, async (transaction) => {
-                    
-                    // 1. Read the current status document within the transaction
-                    const statusSnap = await transaction.get(statusRef);
-                    const statusData = statusSnap.data();
-                    
-                    // 2. CHECK: If the device is not available, throw a custom error object to abort
-                    // This is the race condition guard!
-                    if (!statusSnap.exists() || !statusData.isAvailable) {
-                        console.error("TRANSACTION ABORTED: Device is already checked out.", statusData); 
-                        // Throw a custom error object for reliable catching
-                        const checkoutError = new Error("The device is currently checked out.");
-                        checkoutError.name = "DeviceUnavailableError";
-                        throw checkoutError; 
-                    }
-
-                    // 3. Setup: Get a unique ID for the new history log document
-                    const newHistoryRef = doc(historyCollectionRef); 
-                    const historyDocId = newHistoryRef.id;
-
-                    // 4. Data to write
-                    const checkoutData = {
-                        name,
-                        email,
-                        checkedOutByUserId: userId,
-                        checkoutDate: serverTimestamp(),
-                        expectedReturnDate,
-                        historyDocId: historyDocId // Reference to the new history log document
-                    };
-                    
-                    const historyData = {
-                        ...checkoutData,
-                        checkinDate: null, 
-                        currentStatus: 'ACTIVE'
-                    };
-
-                    // 5. Atomic Write 1: Update the main status document
-                    transaction.update(statusRef, {
-                        isAvailable: false,
-                        currentCheckout: checkoutData,
-                        lastUpdated: serverTimestamp()
-                    });
-
-                    // 6. Atomic Write 2: Create the history log document
-                    transaction.set(newHistoryRef, historyData);
-                });
-
-                // If the transaction succeeded, show success message
-                showMessage("Device successfully checked out! It is now unavailable.", 'success');
-                clearForm();
-
-            } catch (error) {
-                // Handle the custom error thrown during the transaction
-                if (error.name === "DeviceUnavailableError") {
-                    showMessage("Error: The device is currently checked out by another user. Please check the status above.", 'error');
-                } else if (error.code === 'permission-denied') {
-                    // This is the error that often occurs if security rules fail the transaction
-                    showMessage("Error: Permission Denied or Transaction Failed. Check your Firebase Security Rules.", 'error');
-                    console.error("Firestore Error (Permission or Transaction Failure):", error);
-                } else {
-                    console.error("Check-out failed (General Error):", error);
-                    showMessage(`Check-out failed: ${error.message || error}. Please try again.`, 'error');
-                }
-            } finally {
-                 document.getElementById('checkout-button').disabled = false;
-            }
-        }
-
-        /**
-         * Handles the device check-in process.
-         */
-        async function handleCheckin() {
-            if (!db || !userId || !currentCheckoutId) {
-                showMessage("Check-in failed: System error or no active checkout record found.", 'error');
-                return;
-            }
-
-            const statusRef = doc(db, DEVICE_STATUS_PATH);
-            const historyRef = doc(collection(db, CHECKOUT_COLLECTION_PATH), currentCheckoutId);
-
-            try {
-                document.getElementById('checkin-button').disabled = true;
-
-                // 1. Update the main status document (marks it available)
-                await updateDoc(statusRef, {
-                    isAvailable: true,
-                    currentCheckout: null,
-                    lastUpdated: serverTimestamp()
-                });
-
-                // 2. Update the corresponding history document (adds check-in time)
-                await updateDoc(historyRef, {
-                    checkinDate: serverTimestamp(),
-                    currentStatus: 'RETURNED'
-                });
-
-                showMessage("Device successfully checked in! It is now available.", 'success');
-
-            } catch (error) {
-                console.error("Check-in failed:", error);
-                if (error.code === 'permission-denied') {
-                    showMessage("Error: Permission Denied. Please ensure your Firebase Security Rules are published correctly.", 'error');
-                } else {
-                    showMessage(`Check-in failed: ${error.message}. Please try again.`, 'error');
-                }
-            } finally {
-                 document.getElementById('checkin-button').disabled = false;
-            }
-        }
-
-        // --- Event Listeners and Initialization ---
-
-        document.addEventListener('DOMContentLoaded', () => {
-            initFirebase();
-            
-            // Attach form submission handler
-            document.getElementById('checkout-form').addEventListener('submit', handleCheckout);
-            document.getElementById('checkin-button').addEventListener('click', handleCheckin);
-        });
-
-    </script>
-</head>
-<body class="p-4 md:p-8 min-h-screen bg-gray-50">
-
-    <div class="max-w-4xl mx-auto">
-        <header class="text-center mb-8">
-            <h1 class="text-4xl font-extrabold text-gray-900 mb-2">Device Management</h1>
-            <p class="text-lg text-gray-600">Track the check-out and return status of the device in real-time.</p>
-            <p id="user-id-display" class="text-xs text-gray-400 mt-2">User ID: Loading...</p>
-        </header>
-
-        <!-- Global Message Box -->
-        <div id="message-box" class="hidden p-3 mb-6 rounded-lg text-sm transition duration-300"></div>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            
-            <!-- STATUS AND ACTIONS COLUMN (Lg: Col 1-2) -->
-            <div class="lg:col-span-2 space-y-8">
-                
-                <!-- 1. Current Device Status Card -->
-                <div id="status-card" class="card border-2 p-6 rounded-xl transition duration-500">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4">Device Status</h2>
-                    <div class="flex items-center space-x-3 mb-4">
-                        <!-- Status Light Indicator -->
-                        <div class="h-4 w-4 rounded-full transition duration-500" id="status-light"></div>
-                        <p class="text-xl" id="status-text">Loading...</p>
-                    </div>
-                    <div id="current-holder-info" class="text-gray-700 ml-7 space-y-1">
-                        Awaiting data from Firestore...
-                    </div>
-                </div>
-
-                <!-- 2. Check-in Section (Hidden when available) -->
-                <div id="checkin-section" class="card bg-white p-6 rounded-xl border border-gray-200 hidden">
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">Device Return</h2>
-                    <p class="text-gray-600 mb-4">Ready to check the device back in? Confirm the return below.</p>
-                    <button id="checkin-button" 
-                        class="w-full py-3 px-4 text-white font-semibold rounded-lg transition duration-300 shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:opacity-50 disabled:cursor-not-allowed">
-                        Check In Device
-                    </button>
-                </div>
-
-                <!-- 3. Check-out Form (Hidden when checked out) -->
-                <div id="checkout-form" class="card bg-white p-6 rounded-xl border border-gray-200 hidden">
-                    <h2 class="text-xl font-semibold text-gray-800 mb-4">New Check-Out</h2>
-                    <p class="text-gray-600 mb-4">Enter your details and expected return date to check out the device.</p>
-                    
-                    <form>
-                        <div class="mb-4">
-                            <label for="checkout-name" class="block text-sm font-medium text-gray-700 mb-1">Your Full Name</label>
-                            <input type="text" id="checkout-name" required placeholder="John Doe"
-                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                        </div>
-                        <div class="mb-4">
-                            <label for="checkout-email" class="block text-sm font-medium text-gray-700 mb-1">Your Email Address</label>
-                            <input type="email" id="checkout-email" required placeholder="john.doe@example.com"
-                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                        </div>
-                        <div class="mb-6">
-                            <label for="expected-return-date" class="block text-sm font-medium text-gray-700 mb-1">Expected Return Date</label>
-                            <input type="date" id="expected-return-date" required
-                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500">
-                        </div>
-                        
-                        <button type="submit" id="checkout-button"
-                            class="w-full bg-blue-600 text-white py-3 px-4 font-semibold rounded-lg transition duration-300 hover:bg-blue-700 shadow-md hover:shadow-lg focus:outline-none focus:ring-4 focus:ring-blue-300 disabled:opacity-50 disabled:cursor-not-allowed">
-                            Check Out Device
-                        </button>
-                    </form>
-                </div>
-
-            </div>
-
-            <!-- HISTORY COLUMN (Lg: Col 3) -->
-            <div class="lg:col-span-1">
-                <div class="card bg-white p-6 rounded-xl border border-gray-200 h-full flex flex-col">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4">History Log</h2>
-                    <div id="history-list" class="history-list flex-grow overflow-y-auto max-h-[500px]">
-                        <p class="text-center text-gray-500 p-4">Loading history...</p>
-                    </div>
-                </div>
-            </div>
-
-        </div>
-
-    </div>
-
+    </script>
 </body>
 </html>
