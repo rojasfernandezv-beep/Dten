@@ -18,6 +18,7 @@
                         'success': '#10b981', /* Green */
                         'danger': '#ef4444',  /* Red */
                         'warning': '#f59e0b', /* Amber */
+                        'info': '#3b82f6',    /* Blue for Reservation */
                     }
                 }
             }
@@ -31,10 +32,10 @@
     <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
         <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">Device Checkout Hub</h1>
         
-        <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 rounded-lg" role="alert"></div>
+        <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 bg-opacity-70 rounded-lg" role="alert"></div>
         
-        <!-- User Information Form (Required for Checkout) -->
-        <h2 class="text-2xl font-semibold text-gray-700 mb-3">Your Information for Checkout</h2>
+        <!-- User Information Form (Required for Checkout/Reservation) -->
+        <h2 class="text-2xl font-semibold text-gray-700 mb-3">Your Information for Checkout/Reservation</h2>
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 border border-gray-200 rounded-xl bg-indigo-50/50">
             <div>
                 <label for="user-name-input" class="block text-sm font-medium text-gray-700">Full Name</label>
@@ -55,7 +56,7 @@
                 >
             </div>
             <div>
-                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Expected Return/Reservation End Date</label>
                 <input
                     type="date"
                     id="return-date-input"
@@ -68,14 +69,22 @@
         <!-- Device List Container -->
         <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
 
-        <!-- NEW: Seed Data Button Container -->
-        <div id="seed-data-container" class="mt-4 mb-8">
-            <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
-                Seed Initial Device Data
-            </button>
-            <p class="text-sm text-gray-500 mt-2">Click this to add the 'DTEN' device to the system.</p>
+        <!-- Action Buttons Container: Seed and Clear -->
+        <div id="seed-data-container" class="mt-4 mb-8 flex space-x-4 items-start">
+            <div>
+                <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
+                    Seed Initial Device Data
+                </button>
+                <p class="text-sm text-gray-500 mt-2">Click this to add the **DTEN** device to the system.</p>
+            </div>
+            <div>
+                <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
+                    Clear All Devices
+                </button>
+                <p class="text-sm text-gray-500 mt-2">Use this to remove all devices from the database.</p>
+            </div>
         </div>
-        <!-- END NEW -->
+        <!-- END Action Buttons Container -->
 
         <div id="device-list" class="space-y-4">
             <div id="loading-spinner" class="flex justify-center items-center py-10">
@@ -91,7 +100,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
         const ESSENTIAL_FIREBASE_DEFAULTS = {
@@ -132,11 +141,12 @@
             returnDateInput: document.getElementById('return-date-input'),
             seedContainer: document.getElementById('seed-data-container'),
             seedButton: document.getElementById('seed-data-button'),
+            clearButton: document.getElementById('clear-data-button'), 
         };
 
         let db, auth, userId = null;
         let devicesCollectionRef = null;
-        let currentDevices = [];
+        let currentDevices = []; // Holds the latest data from onSnapshot
         
         // --- Utility Functions ---
 
@@ -154,20 +164,60 @@
         function getUserInfo() {
             const name = DOM.nameInput.value.trim();
             const email = DOM.emailInput.value.trim();
-            const returnDate = DOM.returnDateInput.value;
+            const date = DOM.returnDateInput.value;
             
-            if (!name || !email || !returnDate) {
-                displayError("Please enter your Full Name, Email, and the Expected Return Date to check out a device.");
+            if (!name || !email || !date) {
+                displayError("Please enter your Full Name, Email, and the Expected Return/Reservation End Date.");
                 return null;
             }
-            return { name, email, returnDate };
+            return { name, email, date }; // Renamed returnDate to date for generic use
         }
         
         // --- Firestore Operations ---
 
         /**
-         * Adds initial devices to the Firestore collection.
-         * Now adds a single 'DTEN' device for testing.
+         * Deletes all documents in the devices collection.
+         */
+        async function deleteAllDevices() {
+            if (!devicesCollectionRef) return displayError("Database not initialized for clearing.");
+
+            DOM.seedButton.disabled = true;
+            DOM.clearButton.disabled = true;
+            DOM.clearButton.textContent = 'Clearing...';
+
+            try {
+                console.log("Starting deletion of all devices...");
+                
+                const snapshot = await getDocs(query(devicesCollectionRef));
+                
+                if (snapshot.empty) {
+                    console.log("Collection is already empty.");
+                    clearError();
+                    return;
+                }
+
+                const deletePromises = [];
+                snapshot.forEach((docSnap) => {
+                    const docRef = doc(db, devicesCollectionRef.path, docSnap.id);
+                    deletePromises.push(deleteDoc(docRef));
+                });
+                
+                await Promise.all(deletePromises);
+                
+                console.log(`Successfully deleted ${deletePromises.length} devices.`);
+                clearError();
+                
+            } catch (e) {
+                displayError(`Error clearing data: ${e.message}. If this persists, ensure your Firebase Security Rules allow 'delete' access for authenticated users on public data.`);
+            } finally {
+                DOM.seedButton.disabled = false;
+                DOM.clearButton.disabled = false;
+                DOM.clearButton.textContent = 'Clear All Devices';
+            }
+        }
+
+        /**
+         * Adds initial device to the Firestore collection.
          */
         async function seedInitialData() {
             if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
@@ -175,18 +225,15 @@
             DOM.seedButton.disabled = true;
             DOM.seedButton.textContent = 'Seeding... Please wait.';
 
-            // Define the single device requested by the user.
             const initialDevice = { 
                 name: "DTEN", 
                 status: "available" 
             };
-            // Use 'DTEN' as the fixed document ID as requested.
             const deviceId = "DTEN"; 
 
             try {
                 console.log("Starting database seeding with DTEN device...");
                 
-                // Use setDoc to create/overwrite the document with the fixed ID 'DTEN'
                 const docRef = doc(db, devicesCollectionRef.path, deviceId); 
                 await setDoc(docRef, initialDevice, { merge: true });
                 
@@ -195,46 +242,113 @@
             } catch (e) {
                 displayError(`Error seeding data: ${e.message}`);
             } finally {
-                // The onSnapshot listener will automatically re-render and hide the button
-                // if the operation was successful.
                 DOM.seedButton.disabled = false;
                 DOM.seedButton.textContent = 'Seed Initial Device Data';
             }
         }
         
-        async function updateDeviceStatus(deviceId, status) {
-            if (status === 'checked_out' && !userId) {
-                return displayError("Authentication is pending. Please wait a moment before checking out a device.");
+        /**
+         * Updates the device status for checkout, check-in, reservation, or cancellation.
+         * @param {string} deviceId 
+         * @param {'checked_out'|'available'|'reserved'|'cancel_reservation'|'checkout_reserved'} action 
+         * @param {object | null} deviceForCheckout If action is 'checkout_reserved', this should be the full device object.
+         */
+        async function updateDeviceStatus(deviceId, action, deviceForCheckout = null) {
+            if (!userId) {
+                return displayError("Authentication is pending. Please wait a moment before taking action.");
             }
             if (!devicesCollectionRef) return displayError("Database not initialized.");
             
-            const isCheckingOut = status === 'checked_out';
-            let updateData = { status: status };
-            
-            if (isCheckingOut) {
-                const userInfo = getUserInfo();
-                if (!userInfo) return;
+            // Re-get userInfo only if needed for standard checkout/reserve
+            const needsFormInfo = (action === 'checked_out' || action === 'reserve');
+            const userInfo = needsFormInfo ? getUserInfo() : null;
+            if (needsFormInfo && !userInfo) return; // Error handled by getUserInfo
+
+            let updateData = {};
+            let newStatus = '';
+
+            switch (action) {
+                case 'checked_out':
+                    newStatus = 'checked_out';
+                    updateData = {
+                        status: newStatus,
+                        checkedOutBy: userId,
+                        checkedOutByUserName: userInfo.name,
+                        checkedOutByUserEmail: userInfo.email,
+                        expectedReturnDate: userInfo.date,
+                        checkedOutAt: new Date().toISOString(),
+                        // Clear reservation fields if they exist
+                        reservedBy: null,
+                        reservedByUserName: null,
+                        reservedByUserEmail: null,
+                        reservationEndDate: null,
+                    };
+                    break;
+
+                case 'available': // Fallback or Admin override (currently unused)
+                case 'check_in': // Explicit Check-in
+                case 'cancel_reservation': // Explicit Cancel Reservation
+                    newStatus = 'available';
+                    updateData = {
+                        status: newStatus,
+                        checkedOutBy: null,
+                        checkedOutByUserName: null,
+                        checkedOutByUserEmail: null,
+                        expectedReturnDate: null,
+                        checkedOutAt: null,
+                        reservedBy: null,
+                        reservedByUserName: null,
+                        reservedByUserEmail: null,
+                        reservationEndDate: null,
+                    };
+                    break;
                 
-                updateData.checkedOutBy = userId;
-                updateData.checkedOutByUserName = userInfo.name;
-                // FIX: Store the user email
-                updateData.checkedOutByUserEmail = userInfo.email; 
-                updateData.expectedReturnDate = userInfo.returnDate;
-                updateData.checkedOutAt = new Date().toISOString();
-                
-            } else {
-                updateData.checkedOutBy = null;
-                updateData.checkedOutByUserName = null;
-                // FIX: Ensure email field is also cleared on check-in
-                updateData.checkedOutByUserEmail = null; 
-                updateData.expectedReturnDate = null;
-                updateData.checkedOutAt = null;
+                case 'reserve':
+                    newStatus = 'reserved';
+                    updateData = {
+                        status: newStatus,
+                        // Clear checkout fields if they exist (shouldn't if available)
+                        checkedOutBy: null,
+                        // Set reservation fields
+                        reservedBy: userId,
+                        reservedByUserName: userInfo.name,
+                        reservedByUserEmail: userInfo.email,
+                        reservationEndDate: userInfo.date,
+                    };
+                    break;
+
+                case 'checkout_reserved':
+                    if (!deviceForCheckout || deviceForCheckout.status !== 'reserved') {
+                        return displayError("Invalid device state for reserved checkout. Please refresh.");
+                    }
+                    
+                    newStatus = 'checked_out';
+                    
+                    // Use the stored reservation data for checkout
+                    updateData = {
+                        status: newStatus,
+                        checkedOutBy: deviceForCheckout.reservedBy, // Should be current userId
+                        checkedOutByUserName: deviceForCheckout.reservedByUserName,
+                        checkedOutByUserEmail: deviceForCheckout.reservedByUserEmail,
+                        expectedReturnDate: deviceForCheckout.reservationEndDate, // Use reservation end date as expected return date
+                        checkedOutAt: new Date().toISOString(),
+                        // Clear reservation fields
+                        reservedBy: null,
+                        reservedByUserName: null,
+                        reservedByUserEmail: null,
+                        reservationEndDate: null,
+                    };
+                    break;
+
+                default:
+                    return displayError(`Unknown action: ${action}`);
             }
 
             try {
                 const docRef = doc(db, devicesCollectionRef.path, deviceId);
                 await updateDoc(docRef, updateData);
                 clearError();
+                console.log(`Device ${deviceId} status updated to: ${newStatus}`);
             } catch (e) {
                 displayError(`Error updating device: ${e.message}`);
             }
@@ -244,15 +358,86 @@
 
         function createDeviceCard(device) {
             const isCheckedOut = device.status === 'checked_out';
-            const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
-            const isPastDue = isCheckedOut && device.expectedReturnDate && (new Date(device.expectedReturnDate) < new Date());
-
-            const statusColor = isPastDue ? 'bg-warning' : (isCheckedOut ? 'bg-danger' : 'bg-success');
-            const statusText = isPastDue ? 'OVERDUE' : (isCheckedOut ? 'Checked Out' : 'Available');
+            const isReserved = device.status === 'reserved';
+            const isAvailable = device.status === 'available';
             
-            const buttonText = isCheckedOutByMe ? 'Check In' : 'Check Out';
-            const buttonClass = isCheckedOutByMe ? 'bg-danger hover:bg-red-600' : 'bg-primary hover:bg-primary-600';
-            const buttonDisabled = isCheckedOut && !isCheckedOutByMe && userId !== null; 
+            const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
+            const isReservedByMe = isReserved && device.reservedBy === userId;
+
+            // Check for overdue checkout or expired reservation (past current date)
+            const today = new Date().toISOString().split('T')[0];
+            let isPastDue = false;
+            let displayDate = null;
+            
+            if (isCheckedOut) {
+                isPastDue = device.expectedReturnDate && (device.expectedReturnDate < today);
+                displayDate = device.expectedReturnDate;
+            } else if (isReserved) {
+                isPastDue = device.reservationEndDate && (device.reservationEndDate < today);
+                displayDate = device.reservationEndDate;
+            }
+
+            // Determine status display
+            let statusColor = 'bg-success';
+            let statusText = 'Available';
+            let details = '';
+
+            if (isReserved) {
+                statusColor = isPastDue ? 'bg-warning' : 'bg-info';
+                statusText = isPastDue ? 'RESERVATION EXPIRED' : 'Reserved';
+                details = `
+                    <p><span class="font-semibold">${isReservedByMe ? 'Reserved By You' : 'Reserved By:'}</span> ${device.reservedByUserName || 'Unknown'}</p>
+                    <p><span class="font-semibold">End Date:</span> ${displayDate}</p>
+                `;
+            } else if (isCheckedOut) {
+                statusColor = isPastDue ? 'bg-warning' : 'bg-danger';
+                statusText = isPastDue ? 'OVERDUE' : 'Checked Out';
+                details = `
+                    <p><span class="font-semibold">${isCheckedOutByMe ? 'Checked Out By You' : 'Checked Out By:'}</span> ${device.checkedOutByUserName || 'Unknown'}</p>
+                    ${device.checkedOutByUserEmail ? `<p><span class="font-semibold">Email:</span> ${device.checkedOutByUserEmail}</p>` : ''}
+                    <p><span class="font-semibold">Return Date:</span> ${displayDate}</p>
+                `;
+            }
+            
+            // --- Button Logic ---
+            const buttonsHtml = [];
+
+            if (isAvailable) {
+                // Available: Show Checkout and Reserve
+                buttonsHtml.push(`
+                    <button data-action="checked_out" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
+                        Check Out
+                    </button>
+                    <button data-action="reserve" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600 ml-2">
+                        Reserve
+                    </button>
+                `);
+            } else if (isCheckedOutByMe) {
+                // Checked Out By Me: Show Check In
+                buttonsHtml.push(`
+                    <button data-action="check_in" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600">
+                        Check In
+                    </button>
+                `);
+            } else if (isReservedByMe) {
+                // Reserved By Me: Show Check Out Now and Cancel Reservation
+                buttonsHtml.push(`
+                    <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
+                        Check Out Now
+                    </button>
+                    <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
+                        Cancel Reservation
+                    </button>
+                `);
+            } else {
+                // Checked Out by Others OR Reserved by Others: Disabled buttons
+                buttonsHtml.push(`
+                    <button disabled class="py-2 px-4 rounded-lg text-white font-medium bg-gray-400 cursor-not-allowed">
+                        Unavailable
+                    </button>
+                `);
+            }
+
 
             const card = document.createElement('div');
             card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
@@ -261,57 +446,54 @@
                 <span class="w-3 h-3 rounded-full ${statusColor} mr-4 mt-2 flex-shrink-0" aria-label="Device Status"></span>
                 <div class="flex flex-col">
                     <span class="text-xl font-bold text-gray-800">${device.name}</span>
-                    <span class="text-sm font-medium text-gray-600 flex items-center">
-                        Status: <span class="ml-1 font-bold ${isCheckedOut ? (isPastDue ? 'text-warning' : 'text-danger') : 'text-success'}">${statusText}</span>
+                    <span class="text-sm font-medium text-gray-600 flex items-center mb-2">
+                        Status: <span class="ml-1 font-bold ${isReserved ? (isPastDue ? 'text-warning' : 'text-info') : (isCheckedOut ? (isPastDue ? 'text-warning' : 'text-danger') : 'text-success')}">${statusText}</span>
                     </span>
-                    ${isCheckedOut ? `
-                        <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
-                            <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'Another User'}</p>
-                            ${device.checkedOutByUserEmail ? `<p><span class="font-semibold">Email:</span> ${device.checkedOutByUserEmail}</p>` : ''}
+                    ${!isAvailable ? `
+                        <div class="text-sm text-gray-600 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
+                            ${details}
                         </div>
                     ` : ''}
                 </div>
             `;
             
             const buttonSection = `
-                <button
-                    id="btn-${device.id}"
-                    class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed ${buttonClass} mt-3 sm:mt-0"
-                    ${buttonDisabled ? 'disabled' : ''}
-                >
-                    ${buttonText}
-                </button>
+                <div class="flex mt-3 sm:mt-0">
+                    ${buttonsHtml.join('')}
+                </div>
             `;
 
             card.innerHTML = `<div class="flex items-start mb-3 sm:mb-0">${statusIndicator}</div> ${buttonSection}`;
 
-            const button = card.querySelector(`#btn-${device.id}`);
-            button.addEventListener('click', () => {
-                if (userId === null) {
-                    displayError("Authentication is currently pending. Please wait a moment for the connection to finalize.");
-                    if (isCheckedOutByMe) return; 
-                }
-
-                if (isCheckedOutByMe) {
-                    const currentUserName = DOM.nameInput.value.trim();
-                    const requiredUserName = device.checkedOutByUserName;
-
-                    if (!currentUserName) {
-                         displayError(`To check in "${device.name}", please **re-enter your full name** in the "Your Information" section above to confirm your return.`);
-                         return;
-                    }
+            // Attach event listeners to all action buttons in the card
+            card.querySelectorAll('.action-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const action = button.getAttribute('data-action');
                     
-                    if (currentUserName === requiredUserName) {
-                        updateDeviceStatus(device.id, 'available');
-                    } else {
-                        displayError(`Check-in failed for "${device.name}". The name you entered ("${currentUserName}") does not match the name recorded for this checkout ("${requiredUserName}").`);
+                    if (userId === null) {
+                        displayError("Authentication is currently pending. Please wait a moment for the connection to finalize.");
+                        return; 
                     }
 
-                } else if (!isCheckedOut) {
-                    updateDeviceStatus(device.id, 'checked_out');
-                } else {
-                    displayError(`Device "${device.name}" is not available for checkout. It is currently checked out by ${device.checkedOutByUserName || 'another user'}.`);
-                }
+                    if (action === 'check_in') {
+                        const currentUserName = DOM.nameInput.value.trim();
+                        const requiredUserName = device.checkedOutByUserName;
+
+                        if (!currentUserName || currentUserName !== requiredUserName) {
+                             displayError(`To check in "${device.name}", please ensure your full name matches the checkout name ("${requiredUserName}") in the input field above.`);
+                             return;
+                        }
+                        updateDeviceStatus(device.id, action);
+                    } else if (action === 'cancel_reservation') {
+                        updateDeviceStatus(device.id, action);
+                    } else if (action === 'checked_out' || action === 'reserve') {
+                        // Standard checkout/reserve uses data from the top form
+                        updateDeviceStatus(device.id, action);
+                    } else if (action === 'checkout_reserved') {
+                         // New action: Use data stored in the reservation fields (device object)
+                         updateDeviceStatus(device.id, action, device);
+                    }
+                });
             });
 
             return card;
@@ -328,31 +510,32 @@
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.innerHTML = `
                     <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the button above to seed the system with the 'DTEN' device.</p>
+                    <p class="mb-4">Click the **Seed** button to add the 'DTEN' device.</p>
                     <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
                 `;
                 DOM.list.appendChild(message);
                 
-                // Show the seed button when the list is empty
                 DOM.seedContainer.classList.remove('hidden');
                 return;
             }
             
-            // Hide the seed button when the list is populated
-            DOM.seedContainer.classList.add('hidden');
+            DOM.seedContainer.classList.add('hidden'); // Hide seed/clear buttons when data exists (optional)
             
+            // Sort: Overdue/Expired > Checked Out > Reserved > Available
             devices.sort((a, b) => {
-                const statusA = a.status;
-                const statusB = b.status;
+                const today = new Date().toISOString().split('T')[0];
+
+                const isAPastDue = (a.status === 'checked_out' && a.expectedReturnDate < today) || (a.status === 'reserved' && a.reservationEndDate < today);
+                const isBPastDue = (b.status === 'checked_out' && b.expectedReturnDate < today) || (b.status === 'reserved' && b.reservationEndDate < today);
                 
-                if (statusA === 'available' && statusB !== 'available') return -1;
-                if (statusB === 'available' && statusA !== 'available') return 1;
+                if (isAPastDue && !isBPastDue) return -1;
+                if (isBPastDue && !isAPastDue) return 1;
 
-                const isADue = a.expectedReturnDate && (new Date(a.expectedReturnDate) < new Date());
-                const isBDue = b.expectedReturnDate && (new Date(b.expectedReturnDate) < new Date());
+                if (a.status === 'checked_out' && b.status !== 'checked_out') return -1;
+                if (b.status === 'checked_out' && a.status !== 'checked_out') return 1;
 
-                if (isADue && !isBDue) return -1;
-                if (isBDue && !isADue) return 1;
+                if (a.status === 'reserved' && b.status === 'available') return -1;
+                if (b.status === 'reserved' && a.status === 'available') return 1;
 
                 return 0;
             }); 
@@ -370,8 +553,9 @@
                 return displayError("CRITICAL: Final configuration is still missing Project ID or API Key. Cannot proceed.");
             }
             
-            // Attach seed button listener immediately
+            // Attach button listeners
             DOM.seedButton.addEventListener('click', seedInitialData);
+            DOM.clearButton.addEventListener('click', deleteAllDevices);
 
             console.log("Firebase Initialization: Using Project ID:", firebaseConfig.projectId);
 
