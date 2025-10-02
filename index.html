@@ -245,9 +245,9 @@
             if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
 
             // Define the devices to be added. 
-            // ONLY DTEN Board is included as per user request.
+            // ID has been corrected to "DTEN" based on user feedback.
             const devicesToSeed = [
-                { id: "DTEN-Board", name: "DTEN Board", status: "available" }
+                { id: "DTEN", name: "DTEN Board", status: "available" }
             ];
             
             if (devicesToSeed.length === 0) {
@@ -262,6 +262,7 @@
                 console.log(`Starting database seeding with ${devicesToSeed.length} devices...`);
                 
                 const setPromises = devicesToSeed.map(device => {
+                    // Use the corrected ID: "DTEN"
                     const docRef = doc(db, devicesCollectionRef.path, device.id); 
                     return setDoc(docRef, { 
                         name: device.name, 
