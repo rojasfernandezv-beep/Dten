@@ -73,7 +73,7 @@
             <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
                 Seed Initial Device Data
             </button>
-            <p class="text-sm text-gray-500 mt-2">Click this to add 4 sample devices to the system.</p>
+            <p class="text-sm text-gray-500 mt-2">Click this to add the 'DTEN' device to the system.</p>
         </div>
         <!-- END NEW -->
 
@@ -167,7 +167,7 @@
 
         /**
          * Adds initial devices to the Firestore collection.
-         * Uses setDoc with predictable IDs for idempotency.
+         * Now adds a single 'DTEN' device for testing.
          */
         async function seedInitialData() {
             if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
@@ -175,32 +175,22 @@
             DOM.seedButton.disabled = true;
             DOM.seedButton.textContent = 'Seeding... Please wait.';
 
-            const today = new Date();
-            const nextWeek = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-
-            const initialDevices = [
-                { name: "Pixel 8 Pro (Serial 001)", status: "available" },
-                { name: "Chromebook Plus (Serial 002)", status: "available" },
-                { name: "iPad Pro 12.9 (Serial 003)", status: "available" },
-                { 
-                    name: "MacBook Pro 16 (Serial 004)", 
-                    status: "checked_out",
-                    checkedOutBy: "seed-user-123",
-                    checkedOutByUserName: "Test User",
-                    checkedOutByUserEmail: "test.user@example.com", // Added email for seed data
-                    expectedReturnDate: nextWeek,
-                    checkedOutAt: new Date().toISOString()
-                }
-            ];
+            // Define the single device requested by the user.
+            const initialDevice = { 
+                name: "DTEN", 
+                status: "available" 
+            };
+            // Use 'DTEN' as the fixed document ID as requested.
+            const deviceId = "DTEN"; 
 
             try {
-                console.log("Starting database seeding...");
-                for (let i = 0; i < initialDevices.length; i++) {
-                    const device = initialDevices[i];
-                    const docRef = doc(db, devicesCollectionRef.path, `device-${i + 1}`); 
-                    await setDoc(docRef, device, { merge: true });
-                }
-                console.log("Database seeding complete.");
+                console.log("Starting database seeding with DTEN device...");
+                
+                // Use setDoc to create/overwrite the document with the fixed ID 'DTEN'
+                const docRef = doc(db, devicesCollectionRef.path, deviceId); 
+                await setDoc(docRef, initialDevice, { merge: true });
+                
+                console.log("Database seeding complete. DTEN added.");
                 clearError();
             } catch (e) {
                 displayError(`Error seeding data: ${e.message}`);
@@ -338,7 +328,7 @@
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.innerHTML = `
                     <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the button above to seed the system with four sample devices to get started.</p>
+                    <p class="mb-4">Click the button above to seed the system with the 'DTEN' device.</p>
                     <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
                 `;
                 DOM.list.appendChild(message);
@@ -458,3 +448,4 @@
     </script>
 </body>
 </html>
+
