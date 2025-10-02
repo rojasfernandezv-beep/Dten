@@ -99,8 +99,19 @@
         };
         
         // --- Initialization Constants ---
-        const appId = 'external-device-tracker'; // Custom ID for the public path
-        const firebaseConfig = EXTERNAL_FIREBASE_CONFIG;
+        // FIX: The app failed because it stopped using the required global config (__firebase_config) 
+        // when running in the Canvas. We restore the logic to use the global config if present, 
+        // falling back to the hardcoded config for external hosting.
+        const EXTERNAL_APP_ID = 'external-device-tracker';
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : EXTERNAL_APP_ID;
+        let firebaseConfig;
+        try {
+            firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : EXTERNAL_FIREBASE_CONFIG;
+        } catch (e) {
+            console.error("Failed to parse __firebase_config. Using external fallback.", e);
+            firebaseConfig = EXTERNAL_FIREBASE_CONFIG;
+        }
         
         const DOM = {
             info: document.getElementById('user-info'),
@@ -300,8 +311,8 @@
                 
                 // Authentication Logic
                 const authenticateUser = async () => {
-                    // FIX: When running externally (like on GitHub Pages), the custom token is invalid.
-                    // We must force anonymous sign-in, which correctly creates a unique ID.
+                    // FIX: We rely on anonymous sign-in, which correctly creates a unique ID and resolves 
+                    // custom token errors for external deployment. This is retained for stability.
                     try {
                         await signInAnonymously(auth);
                     } catch(e) {
