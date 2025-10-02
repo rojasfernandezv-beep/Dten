@@ -511,26 +511,28 @@
                     `);
                 }
             } else if (isReserved) {
-                // Device is RESERVED (by me or someone else, reserved when available)
-                if (isReservedByMe) {
-                    // Reserved By Me: Show Check Out Now and Cancel Reservation
-                    buttonsHtml.push(`
-                        <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
-                            Check Out Now
-                        </button>
-                        <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
-                            Cancel Reservation
-                        </button>
-                    `);
-                } else {
-                    // Reserved by Others: Show the standard Reserve option. This action is guarded by date validation.
-                    buttonsHtml.push(`
-                        <!-- Action: reserve_available will claim the reservation, replacing the existing one if the date is later. -->
-                        <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
-                            Reserve
-                        </button>
-                    `);
-                }
+                // Device is RESERVED. Show all primary reservation actions as requested by the user.
+                
+                // 1. Reserve (Allows another user to book a time *after* the current reservation ends)
+                buttonsHtml.push(`
+                    <button data-action="reserve_available" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-info hover:bg-blue-600">
+                        Reserve
+                    </button>
+                `);
+
+                // 2. Check Out Now (Only works if the user is the reservation holder AND they provide matching credentials)
+                buttonsHtml.push(`
+                    <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600 ml-2">
+                        Check Out Now
+                    </button>
+                `);
+
+                // 3. Cancel Reservation (Only works if the user is the reservation holder AND they provide matching credentials)
+                buttonsHtml.push(`
+                    <button data-action="cancel_reservation" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-danger hover:bg-red-600 ml-2">
+                        Cancel Reservation
+                    </button>
+                `);
             } else {
                 // Fallback: Disabled buttons
                 buttonsHtml.push(`
