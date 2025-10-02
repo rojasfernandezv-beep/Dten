@@ -175,10 +175,11 @@
                 updateData.expectedReturnDate = null; // Clear new field
                 updateData.checkedOutAt = null;
                 
-                // Clear the local form fields for the next checkout
-                DOM.nameInput.value = '';
-                DOM.emailInput.value = '';
-                DOM.returnDateInput.value = '';
+                // Note: We intentionally DO NOT clear the local form fields here, 
+                // as the user's name is kept for the next check-out or check-in confirmation.
+                // DOM.nameInput.value = '';
+                // DOM.emailInput.value = '';
+                // DOM.returnDateInput.value = '';
             }
 
             try {
@@ -248,13 +249,28 @@
                 if (!userId) return displayError("Authentication is pending. Please wait or refresh.");
 
                 if (isCheckedOutByMe) {
-                    // Case 1: Check In
-                    updateDeviceStatus(device.id, 'available');
+                    // Case 1: Check In (NEW NAME CONFIRMATION LOGIC)
+                    const currentUserName = DOM.nameInput.value.trim();
+                    const requiredUserName = device.checkedOutByUserName;
+
+                    if (!currentUserName) {
+                         displayError(`To check in "${device.name}", please **re-enter your full name** in the "Your Information" section above to confirm your return.`);
+                         return;
+                    }
+                    
+                    if (currentUserName === requiredUserName) {
+                        // Name matches, proceed with check-in
+                        updateDeviceStatus(device.id, 'available');
+                    } else {
+                        // Name mismatch
+                        displayError(`Check-in failed for "${device.name}". The name you entered ("${currentUserName}") does not match the name recorded for this checkout ("${requiredUserName}").`);
+                    }
+
                 } else if (!isCheckedOut) {
                     // Case 2: Check Out (Device is available)
                     updateDeviceStatus(device.id, 'checked_out');
                 } else {
-                    // Case 3 (NEW): Attempting to Check Out a device that is already checked out by someone else
+                    // Case 3: Attempting to Check Out a device that is already checked out by someone else
                     displayError(`Device "${device.name}" is not available for checkout. It is currently checked out by ${device.checkedOutByUserName || 'another user'}.`);
                 }
             });
