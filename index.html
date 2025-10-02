@@ -1,3 +1,45 @@
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Device Checkout System</title>
+  <!-- Your Firebase config goes first -->
+  <script>
+    window.__firebase_config = JSON.stringify({
+      "apiKey": "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM",
+      "authDomain": "device-checkout-system.firebaseapp.com",
+      "projectId": "device-checkout-system",
+      "storageBucket": "device-checkout-system.appspot.com",
+      "messagingSenderId": "",  // FILL IN if available!
+      "appId": ""               // FILL IN if available!
+    });
+    window.__app_id = "device-checkout-system";
+  </script>
+  <!-- Then Tailwind and your main code -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  ...
+</head>
+To get messagingSenderId and appId:
+Go to your Firebase Project Settings → Web app → “Firebase SDK snippet” → Config. You will see the two missing fields.
+Example format:
+
+json
+"messagingSenderId": "1234567890",
+"appId": "1:1234567890:web:abcdef123456"
+Next steps:
+
+Insert your full config above.
+
+Deploy/update your site and the Firebase code should initialize correctly.
+
+Let me know if you need help finding those last two fields or want the full HTML page!
+
+Provide me with the full code
+
+Provide me with the full code
+Here’s your complete HTML code for your Device Checkout System, updated with your Firebase project info.
+To finish setup, just copy, paste, and update the two placeholder values (messagingSenderId, appId) from your Firebase Console (“Project settings” → “Your Apps” → web → "Firebase SDK snippet" → Config).
+
+xml
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -55,4 +97,246 @@
                 >
             </div>
             <div>
-                <label for="
+                <label for="user-email-input" class="block text-sm font-medium text-gray-700">Email Address</label>
+                <input
+                    type="email"
+                    id="user-email-input"
+                    placeholder="jane@company.com"
+                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
+                >
+            </div>
+            <div>
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select a date</label>
+                <input
+                    type="date"
+                    id="return-date-input"
+                    class="w-full p-2 border border-gray-300 rounded-lg mt-1 focus:ring-primary focus:border-primary"
+                    min="2025-10-02"
+                >
+            </div>
+        </div>
+        <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
+        <div id="device-list" class="space-y-4">
+            <div id="loading-spinner" class="flex justify-center items-center py-10">
+                <svg class="animate-spin h-8 w-8 text-primary" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+        </div>
+    </div>
+    <!-- Main Firebase/JS logic -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const appId = typeof window.__app_id !== 'undefined' ? window.__app_id : 'device-checkout-system';
+        const initialAuthToken = typeof window.__initial_auth_token !== 'undefined' ? window.__initial_auth_token : '';
+        let firebaseConfig = {};
+        const configString = (typeof window.__firebase_config === 'string' && window.__firebase_config.trim()) ? window.__firebase_config : null;
+
+        if (configString) {
+            try { firebaseConfig = JSON.parse(configString); }
+            catch (e) { console.error("Failed to parse __firebase_config JSON.", e); }
+        }
+
+        const DOM = {
+            error: document.getElementById('error-message'),
+            list: document.getElementById('device-list'),
+            spinner: document.getElementById('loading-spinner'),
+            nameInput: document.getElementById('user-name-input'),
+            emailInput: document.getElementById('user-email-input'),
+            returnDateInput: document.getElementById('return-date-input'),
+        };
+
+        let db, auth, userId = null;
+        let devicesCollectionRef = null;
+        let currentDevices = [];
+
+        function displayError(message) {
+            console.error(message);
+            DOM.error.textContent = message;
+            DOM.error.classList.remove('hidden');
+        }
+        function clearError() {
+            DOM.error.classList.add('hidden');
+            DOM.error.textContent = '';
+        }
+        function getUserInfo() {
+            const name = DOM.nameInput.value.trim();
+            const email = DOM.emailInput.value.trim();
+            const returnDate = DOM.returnDateInput.value;
+            if (!name || !email || !returnDate) {
+                displayError("Please enter your Full Name, Email, and the Expected Return Date to check out a device.");
+                return null;
+            }
+            return { name, email, returnDate };
+        }
+        async function updateDeviceStatus(deviceId, status) {
+            if (status === 'checked_out' && !userId) {
+                return displayError("Authentication is pending. Please wait before checking out a device.");
+            }
+            if (!devicesCollectionRef) return displayError("Database not initialized.");
+            const isCheckingOut = status === 'checked_out';
+            let updateData = { status: status };
+            if (isCheckingOut) {
+                const userInfo = getUserInfo();
+                if (!userInfo) return;
+                updateData.checkedOutBy = userId;
+                updateData.checkedOutByUserName = userInfo.name;
+                updateData.expectedReturnDate = userInfo.returnDate;
+                updateData.checkedOutAt = new Date().toISOString();
+            } else {
+                updateData.checkedOutBy = null;
+                updateData.checkedOutByUserName = null;
+                updateData.checkedOutByUserEmail = null;
+                updateData.expectedReturnDate = null;
+                updateData.checkedOutAt = null;
+            }
+            try {
+                const docRef = doc(db, devicesCollectionRef.path, deviceId);
+                await updateDoc(docRef, updateData);
+                clearError();
+            } catch (e) {
+                displayError(`Error updating device: ${e.message}`);
+            }
+        }
+        function createDeviceCard(device) {
+            const isCheckedOut = device.status === 'checked_out';
+            const isCheckedOutByMe = isCheckedOut && device.checkedOutBy === userId;
+            const isPastDue = isCheckedOut && device.expectedReturnDate && (new Date(device.expectedReturnDate) < new Date());
+            const statusColor = isPastDue ? 'bg-warning' : (isCheckedOut ? 'bg-danger' : 'bg-success');
+            const statusText = isPastDue ? 'OVERDUE' : (isCheckedOut ? 'Checked Out' : 'Available');
+            const buttonText = isCheckedOutByMe ? 'Check In' : 'Check Out';
+            const buttonClass = isCheckedOutByMe ? 'bg-danger hover:bg-red-600' : 'bg-primary hover:bg-primary-600';
+            const buttonDisabled = isCheckedOut && !isCheckedOutByMe && userId !== null;
+            const card = document.createElement('div');
+            card.className = 'p-5 bg-white border border-gray-200 rounded-xl shadow-lg flex flex-col sm:flex-row items-start sm:items-center justify-between transition duration-200';
+            const statusIndicator = `
+                <span class="w-3 h-3 rounded-full ${statusColor} mr-4 mt-2 flex-shrink-0" aria-label="Device Status"></span>
+                <div class="flex flex-col">
+                    <span class="text-xl font-bold text-gray-800">${device.name}</span>
+                    <span class="text-sm font-medium text-gray-600 flex items-center">
+                        Status: <span class="ml-1 font-bold ${isCheckedOut ? (isPastDue ? 'text-warning' : 'text-danger') : 'text-success'}">${statusText}</span>
+                    </span>
+                    ${isCheckedOut ? `
+                        <div class="text-sm text-gray-600 mt-2 p-3 border border-gray-100 rounded-lg bg-gray-50 max-w-sm">
+                            <p><span class="font-semibold">Checked Out By:</span> ${device.checkedOutByUserName || 'Another User'}</p>
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+            const buttonSection = `
+                <button
+                    id="btn-${device.id}"
+                    class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 transform hover:scale-[1.02] disabled:opacity-50 disabled:cursor-not-allowed ${buttonClass} mt-3 sm:mt-0"
+                    ${buttonDisabled ? 'disabled' : ''}
+                >
+                    ${buttonText}
+                </button>
+            `;
+            card.innerHTML = `<div class="flex items-start mb-3 sm:mb-0">${statusIndicator}</div> ${buttonSection}`;
+            const button = card.querySelector(`#btn-${device.id}`);
+            button.addEventListener('click', () => {
+                if (userId === null) {
+                    displayError("Authentication is currently pending. Please wait for the connection to finalize.");
+                    if (isCheckedOutByMe) return;
+                }
+                if (isCheckedOutByMe) {
+                    const currentUserName = DOM.nameInput.value.trim();
+                    const requiredUserName = device.checkedOutByUserName;
+                    if (!currentUserName) {
+                        displayError(`To check in "${device.name}", please re-enter your full name above to confirm your return.`);
+                        return;
+                    }
+                    if (currentUserName === requiredUserName) {
+                        updateDeviceStatus(device.id, 'available');
+                    } else {
+                        displayError(`Check-in failed for "${device.name}". Your entered name ("${currentUserName}") does not match the name recorded for checkout ("${requiredUserName}").`);
+                    }
+                } else if (!isCheckedOut) {
+                    updateDeviceStatus(device.id, 'checked_out');
+                } else {
+                    displayError(`Device "${device.name}" is not available for checkout. It is currently checked out by ${device.checkedOutByUserName || 'another user'}.`);
+                }
+            });
+            return card;
+        }
+        function renderDeviceList(devices) {
+            DOM.list.innerHTML = '';
+            const spinner = document.getElementById('loading-spinner');
+            if(spinner) spinner.remove();
+            if (devices.length === 0) {
+                const message = document.createElement('p');
+                message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
+                message.textContent = "No devices found in the system. Add devices via the Firestore console.";
+                DOM.list.appendChild(message);
+                return;
+            }
+            devices.sort((a, b) => {
+                const statusA = a.status;
+                const statusB = b.status;
+                if (statusA === 'available' && statusB !== 'available') return -1;
+                if (statusB === 'available' && statusA !== 'available') return 1;
+                const isADue = a.expectedReturnDate && (new Date(a.expectedReturnDate) < new Date());
+                const isBDue = b.expectedReturnDate && (new Date(b.expectedReturnDate) < new Date());
+                if (isADue && !isBDue) return -1;
+                if (isBDue && !isADue) return 1;
+                return 0;
+            });
+            devices.forEach(device => DOM.list.appendChild(createDeviceCard(device)));
+        }
+        async function initFirebase() {
+            if (!Object.keys(firebaseConfig).length) {
+                return displayError("Firebase configuration is missing. Cannot start application. Please ensure the Canvas environment is providing the __firebase_config variable.");
+            }
+            setLogLevel('debug');
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                await setPersistence(auth, browserSessionPersistence);
+                const collectionPath = `artifacts/${appId}/public/data/devices`;
+                devicesCollectionRef = collection(db, collectionPath);
+                startRealtimeListener();
+                const authenticateUser = async () => {
+                    try {
+                        if (initialAuthToken) {
+                            await signInWithCustomToken(auth, initialAuthToken);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch(e) {
+                        console.error("Authentication failed during sign-in attempt:", e);
+                    }
+                };
+                authenticateUser();
+                onAuthStateChanged(auth, (user) => {
+                    userId = user ? user.uid : null;
+                    clearError();
+                });
+            } catch (e) {
+                const spinner = document.getElementById('loading-spinner');
+                if(spinner) spinner.remove();
+                displayError(`Application Error: Cannot initialize database or Firebase services. Details: ${e.message}`);
+            }
+        }
+        function startRealtimeListener() {
+            if (!devicesCollectionRef) return;
+            const devicesQuery = query(devicesCollectionRef);
+            onSnapshot(devicesQuery, (snapshot) => {
+                const devices = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data(),
+                }));
+                currentDevices = devices;
+                renderDeviceList(devices);
+            }, (err) => {
+                displayError(`Real-time Listener Error: ${err.message}. If the list is empty, ensure your Firebase Security Rules allow 'read' access for authenticated users.`);
+            });
+        }
+        window.onload = initFirebase;
+    </script>
+</body>
+</html>
