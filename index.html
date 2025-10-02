@@ -30,7 +30,7 @@
 </head>
 <body class="bg-gray-100 min-h-screen p-4 sm:p-8">
     <div class="max-w-4xl mx-auto bg-white shadow-2xl rounded-xl p-6 sm:p-8">
-        <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">Device Checkout Hub</h1>
+        <h1 class="text-4xl font-extrabold text-gray-800 mb-2 border-b pb-4">DTEN Device Checkout Hub</h1>
         
         <div id="error-message" class="hidden p-4 mb-4 text-sm text-danger bg-red-100 bg-opacity-70 rounded-lg" role="alert"></div>
         
@@ -59,7 +59,7 @@
             </div>
             <div>
                 <!-- Label is 'Select a date' -->
-                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select Start Date</label>
+                <label for="return-date-input" class="block text-sm font-medium text-gray-700">Select Start/Return Date</label>
                 <input
                     type="date"
                     id="return-date-input"
@@ -70,24 +70,7 @@
         </div>
         
         <!-- Device List Container -->
-        <h2 class="text-2xl font-semibold text-gray-700 mb-4">Device Status</h2>
-
-        <!-- Action Buttons Container: Seed and Clear -->
-        <div id="seed-data-container" class="mt-4 mb-8 flex space-x-4 items-start">
-            <div>
-                <button id="seed-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-warning hover:bg-amber-600 disabled:opacity-50">
-                    Seed Initial Device Data
-                </button>
-                <p class="text-sm text-gray-500 mt-2">Click this to add initial devices to the system.</p>
-            </div>
-            <div>
-                <button id="clear-data-button" class="py-2 px-4 rounded-lg text-white font-medium transition duration-150 bg-danger hover:bg-red-600 disabled:opacity-50">
-                    Clear All Data (Devices & Reservations)
-                </button>
-                <p class="text-sm text-gray-500 mt-2">Use this to remove all devices and all reservation data from the database.</p>
-            </div>
-        </div>
-        <!-- END Action Buttons Container -->
+        <h2 class="text-2xl font-semibold text-gray-700 mb-4">DTEN Board Status</h2>
 
         <div id="device-list" class="space-y-4">
             <div id="loading-spinner" class="flex justify-center items-center py-10">
@@ -103,14 +86,14 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, setPersistence, browserSessionPersistence } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, getDocs, deleteDoc, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, collection, query, onSnapshot, updateDoc, doc, setLogLevel, getDoc, setDoc, addDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- HARDCODED ESSENTIALS (Using user's provided details for robustness) ---
+        // --- HARDCODED ESSENTIALS ---
         const ESSENTIAL_FIREBASE_DEFAULTS = {
             apiKey: "AIzaSyB52DNsoD0DutAWJCnQZUGHQYwpBqwB0CM", 
             projectId: "device-checkout-system",
         };
-        // -------------------------------------------------------------------------
+        // ----------------------------
 
         // --- Initialization Constants ---
         const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -142,9 +125,6 @@
             nameInput: document.getElementById('user-name-input'),
             emailInput: document.getElementById('user-email-input'),
             returnDateInput: document.getElementById('return-date-input'),
-            seedContainer: document.getElementById('seed-data-container'),
-            seedButton: document.getElementById('seed-data-button'),
-            clearButton: document.getElementById('clear-data-button'), 
         };
 
         let db, auth, userId = null;
@@ -206,86 +186,37 @@
         // --- Firestore Operations ---
 
         /**
-         * Deletes all documents in both the devices and reservations collections.
-         */
-        async function deleteAllData() {
-            if (!devicesCollectionRef || !reservationsCollectionRef) return displayError("Database not initialized for clearing.");
-
-            DOM.seedButton.disabled = true;
-            DOM.clearButton.disabled = true;
-            DOM.clearButton.textContent = 'Clearing...';
-
-            try {
-                // 1. Delete Devices
-                const deviceSnapshot = await getDocs(query(devicesCollectionRef));
-                const deviceDeletePromises = deviceSnapshot.docs.map(docSnap => deleteDoc(doc(db, devicesCollectionRef.path, docSnap.id)));
-                
-                // 2. Delete Reservations
-                const reservationSnapshot = await getDocs(query(reservationsCollectionRef));
-                const reservationDeletePromises = reservationSnapshot.docs.map(docSnap => deleteDoc(doc(db, reservationsCollectionRef.path, docSnap.id)));
-                
-                await Promise.all([...deviceDeletePromises, ...reservationDeletePromises]);
-                
-                console.log(`Successfully deleted ${deviceDeletePromises.length} devices and ${reservationDeletePromises.length} reservations.`);
-                clearError();
-                
-            } catch (e) {
-                displayError(`Error clearing data: ${e.message}.`);
-            } finally {
-                DOM.seedButton.disabled = false;
-                DOM.clearButton.disabled = false;
-                DOM.clearButton.textContent = 'Clear All Data (Devices & Reservations)';
-            }
-        }
-
-        /**
-         * Adds initial devices (if defined) to the Firestore collection.
+         * Automatically adds the initial DTEN device to the Firestore collection if it doesn't exist.
          */
         async function seedInitialData() {
-            if (!devicesCollectionRef) return displayError("Database not initialized for seeding.");
+            if (!devicesCollectionRef) return console.warn("Database not initialized for seeding check.");
 
-            // Define the devices to be added. 
-            // ID has been corrected to "DTEN" based on user feedback.
-            const devicesToSeed = [
-                { id: "DTEN", name: "DTEN Board", status: "available" }
-            ];
+            const deviceId = "DTEN";
+            const docRef = doc(db, devicesCollectionRef.path, deviceId); 
             
-            if (devicesToSeed.length === 0) {
-                 return displayError("No devices are defined in the seed data array to be added.");
-            }
-
-            DOM.seedButton.disabled = true;
-            DOM.seedButton.textContent = 'Seeding... Please wait.';
-
-
             try {
-                console.log(`Starting database seeding with ${devicesToSeed.length} devices...`);
-                
-                const setPromises = devicesToSeed.map(device => {
-                    // Use the corrected ID: "DTEN"
-                    const docRef = doc(db, devicesCollectionRef.path, device.id); 
-                    return setDoc(docRef, { 
-                        name: device.name, 
-                        status: device.status,
-                        // Ensure all checkout fields are null on creation
-                        checkedOutBy: null,
-                        checkedOutByUserName: null,
-                        checkedOutByUserEmail: null,
-                        expectedReturnDate: null,
-                        checkedOutAt: null,
-                    }, { merge: true });
+                const docSnap = await getDoc(docRef);
+                if (docSnap.exists()) {
+                    // console.log(`Device ID ${deviceId} already exists. Skipping auto-seed.`);
+                    return;
+                }
+
+                // If it doesn't exist, create it.
+                console.log(`Auto-seeding initial device: ${deviceId}`);
+                await setDoc(docRef, { 
+                    name: "DTEN Board", 
+                    status: "available",
+                    checkedOutBy: null,
+                    checkedOutByUserName: null,
+                    checkedOutByUserEmail: null,
+                    expectedReturnDate: null,
+                    checkedOutAt: null,
                 });
                 
-                await Promise.all(setPromises);
-                
-                console.log("Database seeding complete. Devices added.");
                 clearError();
             } catch (e) {
-                displayError(`Error seeding data: ${e.message}`);
-            } finally {
-                DOM.seedButton.disabled = false;
-                DOM.seedButton.textContent = 'Seed Initial Device Data';
-            }
+                displayError(`Error during automatic data seeding: ${e.message}`);
+            } 
         }
         
         /**
@@ -377,7 +308,6 @@
                     await addDoc(reservationsCollectionRef, reservationDoc);
                     
                     // If the device is currently 'available' or 'checked_out' but has no existing queue, change status if the queue is now populated.
-                    // This logic only fires if the first reservation is being placed.
                     if (currentDevice.status === 'available' && deviceReservations.length === 0) {
                          // The device is available and we just added the first reservation
                          await updateDoc(docRef, { status: 'reserved' });
@@ -527,7 +457,6 @@
                 `);
             } else if (isReserved) {
                 // Device is RESERVED (on the shelf, booked for the immediate future)
-                // The buttons are visible if status is 'reserved', regardless of transient nextReservation state.
                 buttonsHtml.push(`
                     <button data-action="checkout_reserved" class="action-btn py-2 px-4 rounded-lg text-white font-medium bg-primary hover:bg-indigo-600">
                         Check Out Now
@@ -654,16 +583,11 @@
                 message.className = 'text-center text-gray-500 py-10 italic bg-gray-50 rounded-lg border border-dashed border-gray-200';
                 message.innerHTML = `
                     <p class="font-semibold text-lg mb-2">No Devices Found</p>
-                    <p class="mb-4">Click the **Seed** button to add the devices. (Only the DTEN Board is included in the seed array now.)</p>
-                    <p class="text-xs">If you already added data and still see this, check your Firebase Security Rules for read access.</p>
+                    <p class="mb-4">The system is trying to automatically create the DTEN Board entry. If this message persists, please check console for errors.</p>
                 `;
                 DOM.list.appendChild(message);
-                
-                DOM.seedContainer.classList.remove('hidden');
                 return;
             }
-            
-            // DOM.seedContainer.classList.add('hidden'); // Optional: keep buttons visible for clearing/re-seeding
             
             // Sort: Overdue/Expired > Checked Out > Reserved > Available
             devices.sort((a, b) => {
@@ -744,10 +668,6 @@
                 return displayError("CRITICAL: Final configuration is still missing Project ID or API Key. Cannot proceed.");
             }
             
-            // Attach button listeners
-            DOM.seedButton.addEventListener('click', seedInitialData);
-            DOM.clearButton.addEventListener('click', deleteAllData);
-
             console.log("Firebase Initialization: Using Project ID:", firebaseConfig.projectId);
 
             try {
@@ -792,6 +712,8 @@
                     if (user) {
                         userId = user.uid;
                         console.log("Auth State Changed: User is authenticated with ID:", userId); 
+                        // Auto-seed the DTEN device right after we confirm we have a user ID
+                        seedInitialData();
                     } else {
                         userId = null;
                         console.log("Auth State Changed: User is not authenticated.");
